@@ -11,7 +11,14 @@ exports.registerUser = async (req, res) => {
     const user = await User.create(req.body);
     res.status(201).json({
       success: true,
-      data: user
+      user: {
+        _id: user._id,
+        name: user.name,
+        phone: user.phone,
+        role: user.role,
+        otpVerified: user.otpVerified,
+        trustScore: user.trustScore
+      }
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -78,8 +85,65 @@ exports.verifyOTP = async (req, res) => {
     res.json({
       success: true,
       message: "OTP verified",
-      token,                 // 👈 REQUIRED FOR MIDDLEWARE
-      trustScore: user.trustScore
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        phone: user.phone,
+        role: user.role,
+        otpVerified: user.otpVerified,
+        trustScore: user.trustScore
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Login User (Password)
+ */
+exports.loginUser = async (req, res) => {
+  try {
+    const { phone, password } = req.body;
+
+    // Validate email & password
+    if (!phone || !password) {
+      return res.status(400).json({ success: false, message: "Please provide phone and password" });
+    }
+
+    // Check for user
+    const user = await User.findOne({ phone }).select("+password");
+
+    if (!user) {
+      return res.status(401).json({ success: false, message: "Invalid credentials" });
+    }
+
+    // Check if password matches
+    const isMatch = await user.matchPassword(password);
+
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: "Invalid credentials" });
+    }
+
+    // Create token
+    const token = jwt.sign(
+      { id: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.status(200).json({
+      success: true,
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        phone: user.phone,
+        role: user.role,
+        otpVerified: user.otpVerified,
+        trustScore: user.trustScore
+      }
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

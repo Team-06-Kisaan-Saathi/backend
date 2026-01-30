@@ -5,7 +5,9 @@ require("dotenv").config();
 const app = express();
 app.use(express.json());
 
-connectDB();
+if (process.env.NODE_ENV !== "test") {
+  connectDB();
+}
 
 app.get("/", (req, res) => {
   res.send("Backend + MongoDB Atlas working");
@@ -19,5 +21,6 @@ app.use("/api/auth", require("./routes/authRoutes"));
 app.use("/api/auctions", require("./routes/auctionRoutes"));
 
 app.use("/api/mandi", require("./routes/mandiRoutes"));
+app.use("/api/inventory", require("./routes/inventoryRoutes"));
 
 module.exports = app;

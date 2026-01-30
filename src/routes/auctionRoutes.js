@@ -4,7 +4,8 @@ const router = express.Router();
 const {
   createAuction,
   closeAuction,
-  getAuctions
+  getAuctions,
+  getMyBids
 } = require("../controllers/auctionController");
 
 const {
@@ -37,6 +38,13 @@ router.get(
   protect,
   requireVerifiedUser,
   getAuctions
+);
+
+// Get my bids
+router.get(
+  "/bids/mine",
+  protect,
+  getMyBids
 );
 
 module.exports = router;

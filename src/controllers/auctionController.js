@@ -32,7 +32,7 @@ exports.closeAuction = async (req, res) => {
         message: "You are not allowed to close this auction"
       });
     }
-    
+
 
     auction.status = "CLOSED";
 
@@ -59,8 +59,44 @@ exports.closeAuction = async (req, res) => {
   }
 };
 
-// Get all auctions
+// Get all auctions with filters
 exports.getAuctions = async (req, res) => {
-  const auctions = await Auction.find();
-  res.json(auctions);
+  try {
+    const { search, minPrice, maxPrice, cropType } = req.query;
+
+    const query = { status: "OPEN" }; // Default to OPEN
+
+    // Search by crop name (case-insensitive)
+    if (search) {
+      query.crop = { $regex: search, $options: "i" };
+    }
+
+    // Filter by Crop Type
+    if (cropType) {
+      query.crop = { $regex: cropType, $options: "i" }; // Assuming crop field holds type or name
+    }
+
+    // Filter by Price Range
+    if (minPrice || maxPrice) {
+      query.basePrice = {};
+      if (minPrice) query.basePrice.$gte = Number(minPrice);
+      if (maxPrice) query.basePrice.$lte = Number(maxPrice);
+    }
+
+    const auctions = await Auction.find(query).sort({ createdAt: -1 });
+    res.json(auctions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// Get auctions where I have bid
+exports.getMyBids = async (req, res) => {
+  try {
+    const myAuctions = await Auction.find({ "bids.buyerId": req.user._id })
+      .sort({ "bids.time": -1 });
+    res.json(myAuctions);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 };
