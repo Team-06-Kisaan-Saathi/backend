@@ -12,7 +12,7 @@ const userSchema = new mongoose.Schema({
   },
   role: {
     type: String,
-    enum: ["farmer", "buyer"],
+    enum: ["farmer", "buyer", "admin"],
     required: true
   },
   language: {
@@ -39,12 +39,41 @@ const userSchema = new mongoose.Schema({
   },
 
   location: {
-    type: String,
+    type: String, // Address string
     default: ""
+  },
+
+  // Geospatial Coordinates
+  locationCoordinates: {
+    type: {
+      type: String,
+      enum: ["Point"],
+      default: "Point"
+    },
+    coordinates: {
+      type: [Number], // [longitude, latitude]
+      default: [0, 0]
+    }
   },
   password: {
     type: String,
     select: false // Don't return password by default
+  },
+
+  // Verification Details
+  verificationStatus: {
+    type: String,
+    enum: ["none", "pending", "approved", "rejected"],
+    default: "none"
+  },
+  aadhaarNumber: {
+    type: String
+  },
+  panNumber: {
+    type: String
+  },
+  verificationComment: {
+    type: String // Reason for rejection
   }
 
 }, { timestamps: true });
@@ -52,9 +81,9 @@ const userSchema = new mongoose.Schema({
 // Encrypt password using bcrypt
 const bcrypt = require("bcryptjs");
 
-userSchema.pre("save", async function (next) {
+userSchema.pre("save", async function () {
   if (!this.isModified("password")) {
-    next();
+    return;
   }
   const salt = await bcrypt.genSalt(10);
   this.password = await bcrypt.hash(this.password, salt);
@@ -64,5 +93,8 @@ userSchema.pre("save", async function (next) {
 userSchema.methods.matchPassword = async function (enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
+
+// Index for Geospatial queries
+userSchema.index({ locationCoordinates: "2dsphere" });
 
 module.exports = mongoose.model("User", userSchema);

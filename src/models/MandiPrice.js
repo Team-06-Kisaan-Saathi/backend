@@ -10,7 +10,20 @@ const mandiPriceSchema = new mongoose.Schema(
       type: String,
       required: true
     },
+    // Location Coordinates (GeoJSON)
     location: {
+      type: {
+        type: String,
+        enum: ["Point"],
+        default: "Point"
+      },
+      coordinates: {
+        type: [Number], // [longitude, latitude]
+        required: true
+      }
+    },
+    // Location Name (e.g., "Azadpur Mandi")
+    locationName: {
       type: String,
       required: true
     },
@@ -26,5 +39,8 @@ const mandiPriceSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Index for Geospatial queries
+mandiPriceSchema.index({ location: "2dsphere" });
 
 module.exports = mongoose.model("MandiPrice", mandiPriceSchema);

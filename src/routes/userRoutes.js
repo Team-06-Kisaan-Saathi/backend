@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const userController = require("../controllers/userController");
-const { protect } = require("../middleware/authMiddleware");
+const { protect, authorize } = require("../middleware/authMiddleware");
 
 // Create user (PUBLIC – registration)
 router.post("/", userController.createUser);
@@ -11,6 +11,48 @@ router.get(
   "/",
   protect,
   userController.getUsers
+);
+
+// Request Verification (PROTECTED)
+router.post(
+  "/verify",
+  protect,
+  userController.requestVerification
+);
+
+// Update Verification Status (ADMIN ONLY)
+router.put(
+  "/:id/verify-status",
+  protect,
+  authorize("admin"),
+  userController.updateVerificationStatus
+);
+
+// Get My Profile (PROTECTED)
+router.get(
+  "/profile",
+  protect,
+  userController.getUserProfile
+);
+
+// Update Location (PROTECTED)
+router.post(
+  "/location",
+  protect,
+  userController.updateLocation
+);
+
+// Update Profile (Name, Language) - PROTECTED
+router.put(
+  "/profile",
+  protect,
+  userController.updateProfile
+);
+
+// Get Public Profile (Public Data) - PUBLIC/PROTECTED
+router.get(
+  "/public/:id",
+  userController.getPublicProfile
 );
 
 module.exports = router;
