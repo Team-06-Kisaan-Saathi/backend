@@ -23,4 +23,10 @@ app.use("/api/auctions", require("./routes/auctionRoutes"));
 app.use("/api/mandi", require("./routes/mandiRoutes"));
 app.use("/api/inventory", require("./routes/inventoryRoutes"));
 
+
+//location routes
+app.use("/api/locations", require("./routes/locationRoutes"));
+
+
+
 module.exports = app;
