@@ -26,15 +26,17 @@ exports.registerUser = async (req, res) => {
 };
 
 /**
- * Send OTP (SIMULATED)
+ * Send OTP (SIMULATED) - Step 1 of Sign Up / Login (if passwordless)
+ * Now handles both new and existing users.
  */
 exports.sendOTP = async (req, res) => {
   try {
     const { phone } = req.body;
 
-    const user = await User.findOne({ phone });
+    let user = await User.findOne({ phone });
     if (!user) {
-      return res.status(404).json({ message: "User not found" });
+      // Create a temporary user with just the phone number
+      user = await User.create({ phone });
     }
 
     // Generate 6-digit OTP
@@ -56,7 +58,7 @@ exports.sendOTP = async (req, res) => {
 };
 
 /**
- * Verify OTP
+ * Verify OTP - Step 2 of Sign Up
  */
 exports.verifyOTP = async (req, res) => {
   try {
@@ -68,48 +70,86 @@ exports.verifyOTP = async (req, res) => {
     }
 
     user.otpVerified = true;
-    user.otp = null;
-
-    user.totalTransactions += 1;
-    user.trustScore = updateTrustScore(user);
+    user.otp = null; // Clear OTP after usage
 
     await user.save();
 
-    // 🔑 ISSUE JWT TOKEN (THIS IS THE MISSING LINK)
-    const token = jwt.sign(
-      { id: user._id },
-      process.env.JWT_SECRET,
-      { expiresIn: "7d" }
-    );
-
     res.json({
       success: true,
-      message: "OTP verified",
-      token,
+      message: "OTP verified. Please proceed to set PIN.",
       user: {
         _id: user._id,
-        name: user.name,
         phone: user.phone,
-        role: user.role,
-        otpVerified: user.otpVerified,
-        trustScore: user.trustScore
+        otpVerified: user.otpVerified
       }
     });
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 };
 
 /**
- * Login User (Password)
+ * Complete Signup - Step 3 (Set PIN and Profile Details)
+ */
+exports.completeSignup = async (req, res) => {
+  try {
+    const { phone, pin, name, role } = req.body;
+
+    if (!phone || !pin || !name || !role) {
+      return res.status(400).json({ success: false, message: "Please provide phone, pin, name, and role." });
+    }
+
+    const user = await User.findOne({ phone });
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    if (!user.otpVerified) {
+      return res.status(403).json({ success: false, message: "Please verify OTP first." });
+    }
+
+    user.name = name;
+    user.role = role;
+    user.password = pin; // Uses the pre-save hook to hash this "pin"
+    user.trustScore = updateTrustScore(user);
+
+    await user.save();
+
+    // Create token
+    const token = jwt.sign(
+      { id: user._id },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+
+    res.status(201).json({
+      success: true,
+      token,
+      user: {
+        _id: user._id,
+        name: user.name,
+        phone: user.phone,
+        role: user.role,
+        trustScore: user.trustScore
+      }
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+/**
+ * Login User (Phone + PIN)
  */
 exports.loginUser = async (req, res) => {
   try {
-    const { phone, password } = req.body;
+    const { phone, pin } = req.body;
 
-    // Validate email & password
-    if (!phone || !password) {
-      return res.status(400).json({ success: false, message: "Please provide phone and password" });
+    // Validate phone & pin
+    if (!phone || !pin) {
+      return res.status(400).json({ success: false, message: "Please provide phone and pin" });
     }
 
     // Check for user
@@ -119,8 +159,8 @@ exports.loginUser = async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
 
-    // Check if password matches
-    const isMatch = await user.matchPassword(password);
+    // Check if password (PIN) matches
+    const isMatch = await user.matchPassword(pin);
 
     if (!isMatch) {
       return res.status(401).json({ success: false, message: "Invalid credentials" });
