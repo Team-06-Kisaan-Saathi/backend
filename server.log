@@ -1,7 +1,5 @@
-[dotenv@17.2.3] injecting env (6) from .env -- tip: 🔑 add access controls to secrets: https://dotenvx.com/ops
-[dotenv@17.2.3] injecting env (0) from .env -- tip: ✅ audit secrets and track compliance: https://dotenvx.com/ops
+[dotenv@17.2.3] injecting env (6) from .env -- tip: 🛠️  run anywhere with `dotenvx run -- yourcommand`
+[dotenv@17.2.3] injecting env (0) from .env -- tip: ⚙️  enable debug logging with { debug: true }
 Server running on port 5001
 MongoDB Atlas Connected
 MongoDB Atlas Connected
-[ALERT] Found 1 users watching Wheat at Azadpur
-   -> NOTIFY User: Watchlist Tester (9988776655) | New Price: ₹2500/Q
