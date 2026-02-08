@@ -227,3 +227,29 @@ exports.getPublicProfile = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
+
+// GET SAVED LOCATION (For Nearby Search)
+exports.getMyLocation = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select("location locationCoordinates");
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const coords = user.locationCoordinates?.coordinates || [0, 0];
+    const lng = Number(coords[0]);
+    const lat = Number(coords[1]);
+
+    // if not set yet
+    const hasRealLocation = !(lat === 0 && lng === 0);
+
+    return res.json({
+      success: true,
+      location: user.location || "",
+      lat: hasRealLocation ? lat : null,
+      lng: hasRealLocation ? lng : null,
+      coordinates: hasRealLocation ? coords : null, // [lng, lat]
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};

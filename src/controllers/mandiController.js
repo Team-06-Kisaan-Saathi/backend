@@ -1,105 +1,161 @@
 const MandiPrice = require("../models/MandiPrice");
 
+/** helper to standardize to ₹/quintal */
+function parseNumber(x) {
+  if (typeof x === "number") return x;
+  const cleaned = String(x || "").replace(/[₹, ]/g, "").trim();
+  const n = Number(cleaned);
+  return Number.isFinite(n) ? n : null;
+}
+
+function normalizeUnit(unit) {
+  const u = String(unit || "").toLowerCase();
+  if (u.includes("quintal")) return "quintal";
+  return "kg";
+}
+
+function standardizeToQuintal(price, unit) {
+  const num = parseNumber(price);
+  if (num === null) return null;
+
+  const u = normalizeUnit(unit);
+  let pricePerQuintal = num;
+
+  // if ₹/kg => ₹/quintal
+  if (u === "kg") pricePerQuintal = num * 100;
+
+  if (!Number.isFinite(pricePerQuintal) || pricePerQuintal <= 0) return null;
+  return pricePerQuintal;
+}
+
 /**
  * ADD MANDI PRICE DATA (for testing / admin)
+ * cleansing + store canonical ₹/quintal
  */
 exports.addMandiPrice = async (req, res) => {
   try {
-    const mandiPrice = await MandiPrice.create(req.body);
-    res.status(201).json({
-      success: true,
-      data: mandiPrice
+    const { crop, mandi, location, locationName, price, unit } = req.body;
+
+    const pricePerQuintal = standardizeToQuintal(price, unit);
+    if (!pricePerQuintal) {
+      return res.status(400).json({ success: false, message: "Invalid price/unit" });
+    }
+
+    const mandiPrice = await MandiPrice.create({
+      crop,
+      mandi,
+      location,
+      locationName,
+      pricePerQuintal,
+      rawPrice: price,
+      rawUnit: unit,
     });
+
+    res.status(201).json({ success: true, data: mandiPrice });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
 /**
- * FETCH MANDI PRICES
- * Filters: crop, location
+ * FETCH NEARBY MANDIS
+ * use limit param + return lat/lng + distanceKm
  */
-// FETCH NEARBY MANDIS
 exports.getNearbyMandis = async (req, res) => {
   try {
-    const { lat, lng, dist = 50 } = req.query; // Default dist 50km
+    const { lat, lng, distKm = 50, limit = 5 } = req.query;
 
     if (!lat || !lng) {
-      return res.status(400).json({ message: "Latitude and Longitude required" });
+      return res.status(400).json({
+        success: false,
+        message: "Latitude and Longitude required",
+      });
     }
+
+    const lim = Math.min(Math.max(Number(limit) || 5, 1), 20);
 
     const mandis = await MandiPrice.aggregate([
       {
         $geoNear: {
+          key: "location", // ✅ IMPORTANT
           near: {
             type: "Point",
-            coordinates: [parseFloat(lng), parseFloat(lat)]
+            coordinates: [parseFloat(lng), parseFloat(lat)], // [lng, lat]
           },
-          distanceField: "distance",
-          maxDistance: dist * 1000, // Convert km to meters
-          spherical: true
-        }
+          distanceField: "distanceMeters",
+          maxDistance: Number(distKm) * 1000,
+          spherical: true,
+        },
       },
-      // Group by Mandi name to get unique list (since multiple crops per mandi)
       {
         $group: {
           _id: "$mandi",
-          locationName: { $first: "$locationName" },
-          coordinates: { $first: "$location.coordinates" },
-          distance: { $first: "$distance" }
-        }
+          mandiId: { $first: "$mandi" },
+          mandiName: { $first: "$locationName" },
+          coords: { $first: "$location.coordinates" },
+          distanceMeters: { $first: "$distanceMeters" },
+        },
       },
-      { $sort: { distance: 1 } },
-      { $limit: 10 }
+      { $addFields: { distanceKm: { $divide: ["$distanceMeters", 1000] } } },
+      { $sort: { distanceMeters: 1 } },
+      { $limit: lim },
+      {
+        $project: {
+          _id: 0,
+          mandiId: 1,
+          mandiName: 1,
+          coordinates: "$coords",
+          distanceKm: 1,
+        },
+      },
     ]);
 
-    res.json({
-      success: true,
-      count: mandis.length,
-      data: mandis
-    });
+    return res.json({ success: true, count: mandis.length, data: mandis });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ success: false, error: err.message });
   }
 };
 
+
+/**
+ * FETCH MANDI PRICES
+ * apply mandis filter too
+ */
 exports.getMandiPrices = async (req, res) => {
   try {
-    const { crop, location, sort } = req.query;
+    const { crop, location, sort, mandis, limit = 80 } = req.query;
 
     const filter = {};
-
     if (crop) filter.crop = crop;
-    // Note: old 'location' was string, now we should check 'locationName' or generic
     if (location) filter.locationName = { $regex: location, $options: "i" };
+
+    // filter by specific mandis (comma separated)
+    if (mandis) {
+      filter.mandi = {
+        $in: String(mandis)
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      };
+    }
 
     let query = MandiPrice.find(filter);
 
-    // Sorting Logic
-    if (sort === "price_desc") {
-      query = query.sort({ pricePerQuintal: -1 });
-    } else {
-      query = query.sort({ date: -1 });
-    }
+    if (sort === "price_desc") query = query.sort({ pricePerQuintal: -1 });
+    else query = query.sort({ date: -1 });
 
-    let prices = await query;
+    const lim = Math.min(Math.max(Number(limit) || 80, 1), 200);
+    let prices = await query.limit(lim);
 
-    // Add "isBestPrice" indicator if sorting by price
-    // Note: Since we are just adding a flag, we might need to return plain objects
     if (sort === "price_desc" && prices.length > 0) {
-      // Convert to plain objects to append property if generic Mongoose doc doesn't allow virtuals easily without schema change
       prices = prices.map((p, index) => ({
         ...p.toObject(),
-        isBestPrice: index === 0 // Highest price is first
+        isBestPrice: index === 0,
       }));
     }
 
-    res.json({
-      success: true,
-      count: prices.length,
-      data: prices
-    });
+    res.json({ success: true, count: prices.length, data: prices });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 };

@@ -55,4 +55,10 @@ router.get(
   userController.getPublicProfile
 );
 
+// Get saved location (PROTECTED)
+router.get("/location", protect, userController.getMyLocation);
+
+
+
+
 module.exports = router;
