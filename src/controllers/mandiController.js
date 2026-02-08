@@ -1,4 +1,5 @@
 const MandiPrice = require("../models/MandiPrice");
+const Watchlist = require("../models/Watchlist");
 
 /**
  * ADD MANDI PRICE DATA (for testing / admin)
@@ -6,6 +7,23 @@ const MandiPrice = require("../models/MandiPrice");
 exports.addMandiPrice = async (req, res) => {
   try {
     const mandiPrice = await MandiPrice.create(req.body);
+
+    // --- NOTIFICATION TRIGGER START ---
+    // Check if anyone is watching this Crop + Mandi
+    const watchers = await Watchlist.find({
+      crop: mandiPrice.crop,
+      mandi: mandiPrice.mandi
+    }).populate("user", "phone name");
+
+    if (watchers.length > 0) {
+      console.log(`[ALERT] Found ${watchers.length} users watching ${mandiPrice.crop} at ${mandiPrice.mandi}`);
+      watchers.forEach(w => {
+        // In a real app, send SMS/Push Notification here
+        console.log(`   -> NOTIFY User: ${w.user.name} (${w.user.phone}) | New Price: ₹${mandiPrice.pricePerQuintal}/Q`);
+      });
+    }
+    // --- NOTIFICATION TRIGGER END ---
+
     res.status(201).json({
       success: true,
       data: mandiPrice
