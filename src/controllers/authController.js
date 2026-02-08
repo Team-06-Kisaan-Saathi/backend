@@ -100,6 +100,11 @@ exports.completeSignup = async (req, res) => {
       return res.status(400).json({ success: false, message: "Please provide phone, pin, name, and role." });
     }
 
+    // Validate PIN (Digits only, 4-6 length)
+    if (!/^\d{4,6}$/.test(pin)) {
+      return res.status(400).json({ success: false, message: "PIN must be 4-6 digits only." });
+    }
+
     const user = await User.findOne({ phone });
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });

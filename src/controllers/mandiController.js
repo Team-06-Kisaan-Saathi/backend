@@ -22,10 +22,17 @@ exports.addMandiPrice = async (req, res) => {
 // FETCH NEARBY MANDIS
 exports.getNearbyMandis = async (req, res) => {
   try {
-    const { lat, lng, dist = 50 } = req.query; // Default dist 50km
+    let { lat, lng, dist = 50 } = req.query; // Default dist 50km
+
+    // Fallback to User Location if Lat/Lng not provided
+    if ((!lat || !lng) && req.user && req.user.locationCoordinates) {
+      // req.user.locationCoordinates.coordinates is [lng, lat]
+      lng = req.user.locationCoordinates.coordinates[0];
+      lat = req.user.locationCoordinates.coordinates[1];
+    }
 
     if (!lat || !lng) {
-      return res.status(400).json({ message: "Latitude and Longitude required" });
+      return res.status(400).json({ message: "Latitude and Longitude required (or update your profile location)" });
     }
 
     const mandis = await MandiPrice.aggregate([

@@ -20,6 +20,7 @@ router.post(
 router.get("/", controller.getMandiPrices);
 
 // Get nearby mandis
-router.get("/nearby", controller.getNearbyMandis);
+// Get nearby mandis
+router.get("/nearby", protect, controller.getNearbyMandis);
 
 module.exports = router;
