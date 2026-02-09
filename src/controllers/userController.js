@@ -107,48 +107,76 @@ exports.getUserProfile = async (req, res) => {
     res.status(500).json({ error: err.message });
   }
 };
-// UPDATE LOCATION (For Nearby Search)
+
+// UPDATE LOCATION (GPS or Dropdown)
 exports.updateLocation = async (req, res) => {
   try {
+    console.log("\n================ UPDATE LOCATION =================");
+    console.log("➡️  Endpoint hit: POST /api/users/location");
+    console.log("➡️  User ID:", req.user?._id);
+    console.log("➡️  Request body:", req.body);
+
     const { lat, lng, address } = req.body;
 
-    if (!lat || !lng) {
-      return res.status(400).json({ message: "Latitude and Longitude are required" });
+    // Validate input
+    if (
+      typeof lat !== "number" ||
+      typeof lng !== "number" ||
+      typeof address !== "string" ||
+      !address.trim()
+    ) {
+      console.log("❌ Validation failed");
+      return res.status(400).json({
+        message: "address (location name), lat and lng are required",
+      });
     }
+
+    console.log("✅ Validation passed");
+    console.log("📍 Parsed values:", { lat, lng, address });
 
     const user = await User.findById(req.user._id);
     if (!user) {
+      console.log("❌ User not found in DB");
       return res.status(404).json({ message: "User not found" });
     }
 
-    // Update coordinates
+    console.log("👤 User found:", user._id);
+
+    // Update fields
+    user.location = address.trim();
     user.locationCoordinates = {
       type: "Point",
-      coordinates: [parseFloat(lng), parseFloat(lat)]
+      coordinates: [lng, lat], // IMPORTANT: [lng, lat]
     };
 
-    // Update text address if provided
-    if (address) {
-      user.location = address;
-    }
+    console.log("📝 Updating user with:");
+    console.log({
+      location: user.location,
+      coordinates: user.locationCoordinates.coordinates,
+    });
 
     await user.save();
 
-    res.json({
+    //debug
+    console.log("User location saved successfully");
+    console.log("=================================================\n");
+
+    return res.json({
       success: true,
       message: "Location updated successfully",
       user: {
         _id: user._id,
-        name: user.name,
         location: user.location,
-        coordinates: user.locationCoordinates.coordinates
-      }
+        coordinates: user.locationCoordinates.coordinates,
+      },
     });
-
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    console.error("ERROR in updateLocation:", err);
+    return res.status(500).json({ error: err.message });
   }
 };
+
+
 
 // UPDATE PROFILE (Name, Language)
 exports.updateProfile = async (req, res) => {
@@ -194,6 +222,32 @@ exports.getPublicProfile = async (req, res) => {
     res.json({
       success: true,
       user
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+// GET SAVED LOCATION (For Nearby Search)
+exports.getMyLocation = async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select("location locationCoordinates");
+
+    if (!user) return res.status(404).json({ message: "User not found" });
+
+    const coords = user.locationCoordinates?.coordinates || [0, 0];
+    const lng = Number(coords[0]);
+    const lat = Number(coords[1]);
+
+    // if not set yet
+    const hasRealLocation = !(lat === 0 && lng === 0);
+
+    return res.json({
+      success: true,
+      location: user.location || "",
+      lat: hasRealLocation ? lat : null,
+      lng: hasRealLocation ? lng : null,
+      coordinates: hasRealLocation ? coords : null, // [lng, lat]
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

@@ -26,4 +26,10 @@ app.use("/api/watchlist", require("./routes/watchlistRoutes"));
 app.use("/api/chat", require("./routes/chatRoutes"));
 app.use("/api/deals", require("./routes/dealRoutes"));
 
+
+//location routes
+app.use("/api/locations", require("./routes/locationRoutes"));
+
+
+
 module.exports = app;
