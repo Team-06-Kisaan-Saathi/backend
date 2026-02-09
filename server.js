@@ -16,6 +16,7 @@ const io = new Server(server, {
 });
 
 require("./src/sockets/auctionSocket")(io);
+require("./src/sockets/chatSocket")(io);
 
 const PORT = process.env.PORT || 5001;
 

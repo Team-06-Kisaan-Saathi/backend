@@ -22,6 +22,9 @@ app.use("/api/auctions", require("./routes/auctionRoutes"));
 
 app.use("/api/mandi", require("./routes/mandiRoutes"));
 app.use("/api/inventory", require("./routes/inventoryRoutes"));
+app.use("/api/watchlist", require("./routes/watchlistRoutes"));
+app.use("/api/chat", require("./routes/chatRoutes"));
+app.use("/api/deals", require("./routes/dealRoutes"));
 
 
 //location routes
