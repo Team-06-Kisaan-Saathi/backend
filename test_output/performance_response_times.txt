@@ -1,0 +1,20 @@
+Request 1:
+  Response Time: 0.000344s | Status: 000
+Request 2:
+  Response Time: 0.000367s | Status: 000
+Request 3:
+  Response Time: 0.000327s | Status: 000
+Request 4:
+  Response Time: 0.000561s | Status: 000
+Request 5:
+  Response Time: 0.000442s | Status: 000
+Request 6:
+  Response Time: 0.000310s | Status: 000
+Request 7:
+  Response Time: 0.000511s | Status: 000
+Request 8:
+  Response Time: 0.000587s | Status: 000
+Request 9:
+  Response Time: 0.000373s | Status: 000
+Request 10:
+  Response Time: 0.000402s | Status: 000
