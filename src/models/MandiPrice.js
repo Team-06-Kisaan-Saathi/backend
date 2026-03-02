@@ -42,5 +42,8 @@ const mandiPriceSchema = new mongoose.Schema(
 
 // Index for Geospatial queries
 mandiPriceSchema.index({ location: "2dsphere" });
+mandiPriceSchema.index({ crop: 1 });
+mandiPriceSchema.index({ mandi: 1 });
+mandiPriceSchema.index({ date: -1 });
 
 module.exports = mongoose.model("MandiPrice", mandiPriceSchema);
