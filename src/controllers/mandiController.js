@@ -1,6 +1,13 @@
 const MandiPrice = require("../models/MandiPrice");
 const Watchlist = require("../models/Watchlist");
 
+// In-memory cache for Mandi Prices
+let priceCache = {
+  data: null,
+  lastUpdated: null,
+  ttl: 10 * 60 * 1000, // 10 minutes
+};
+
 /** helper to standardize to ₹/quintal */
 function parseNumber(x) {
   if (typeof x === "number") return x;
@@ -31,15 +38,15 @@ function standardizeToQuintal(price, unit) {
 
 /**
  * ADD MANDI PRICE DATA (for testing / admin)
- * cleansing + store canonical ₹/quintal
  */
 exports.addMandiPrice = async (req, res) => {
+  const requestId = req.headers['x-request-id'] || Math.random().toString(36).substring(7);
   try {
     const { crop, mandi, location, locationName, price, unit } = req.body;
 
     const pricePerQuintal = standardizeToQuintal(price, unit);
     if (!pricePerQuintal) {
-      return res.status(400).json({ success: false, message: "Invalid price/unit" });
+      return res.status(400).json({ success: false, message: "Invalid price/unit", requestId });
     }
 
     const mandiPrice = await MandiPrice.create({
@@ -52,17 +59,21 @@ exports.addMandiPrice = async (req, res) => {
       rawUnit: unit,
     });
 
-    res.status(201).json({ success: true, data: mandiPrice });
+    // Invalidate cache on new data
+    priceCache.data = null;
+
+    res.status(201).json({ success: true, data: mandiPrice, requestId });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error(`[${new Date().toISOString()}] [${requestId}] Error adding mandi price:`, err.message);
+    res.status(500).json({ success: false, error: "Database error during write", message: err.message, requestId });
   }
 };
 
 /**
  * FETCH NEARBY MANDIS
- * use limit param + return lat/lng + distanceKm
  */
 exports.getNearbyMandis = async (req, res) => {
+  const requestId = req.headers['x-request-id'] || Math.random().toString(36).substring(7);
   try {
     const { lat, lng, distKm = 50, limit = 5 } = req.query;
 
@@ -70,6 +81,7 @@ exports.getNearbyMandis = async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Latitude and Longitude required",
+        requestId
       });
     }
 
@@ -78,10 +90,10 @@ exports.getNearbyMandis = async (req, res) => {
     const mandis = await MandiPrice.aggregate([
       {
         $geoNear: {
-          key: "location", // ✅ IMPORTANT
+          key: "location",
           near: {
             type: "Point",
-            coordinates: [parseFloat(lng), parseFloat(lat)], // [lng, lat]
+            coordinates: [parseFloat(lng), parseFloat(lat)],
           },
           distanceField: "distanceMeters",
           maxDistance: Number(distKm) * 1000,
@@ -111,52 +123,96 @@ exports.getNearbyMandis = async (req, res) => {
       },
     ]);
 
-    return res.json({ success: true, count: mandis.length, data: mandis });
+    return res.json({ success: true, count: mandis.length, data: mandis, requestId });
   } catch (err) {
-    return res.status(500).json({ success: false, error: err.message });
+    console.error(`[${new Date().toISOString()}] [${requestId}] Error fetching nearby mandis:`, err.message);
+    return res.status(500).json({ success: false, error: "Internal server error", message: err.message, requestId });
   }
 };
 
-
 /**
- * FETCH MANDI PRICES
- * apply mandis filter too
+ * FETCH MANDI PRICES WITH CACHING & DEDUPLICATION
  */
 exports.getMandiPrices = async (req, res) => {
+  const requestId = req.headers['x-request-id'] || Math.random().toString(36).substring(7);
+  const startTime = Date.now();
+
   try {
-    const { crop, location, sort, mandis, limit = 80 } = req.query;
+    const { crop, location, sort, mandis, limit = 100, bypassCache } = req.query;
+
+    // Check Cache first if it's a generic request
+    const isGenericRequest = !crop && !location && !mandis && limit == 100;
+    if (isGenericRequest && !bypassCache && priceCache.data && (Date.now() - priceCache.lastUpdated < priceCache.ttl)) {
+      return res.json({
+        success: true,
+        data: priceCache.data,
+        source: "cache",
+        lastUpdated: priceCache.lastUpdated,
+        requestId
+      });
+    }
 
     const filter = {};
-    if (crop) filter.crop = crop;
+    if (crop) filter.crop = { $regex: crop, $options: "i" };
     if (location) filter.locationName = { $regex: location, $options: "i" };
 
-    // filter by specific mandis (comma separated)
     if (mandis) {
       filter.mandi = {
-        $in: String(mandis)
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
+        $in: String(mandis).split(",").map((s) => s.trim()).filter(Boolean),
       };
     }
 
     let query = MandiPrice.find(filter);
 
     if (sort === "price_desc") query = query.sort({ pricePerQuintal: -1 });
+    else if (sort === "price_asc") query = query.sort({ pricePerQuintal: 1 });
     else query = query.sort({ date: -1 });
 
-    const lim = Math.min(Math.max(Number(limit) || 80, 1), 200);
-    let prices = await query.limit(lim);
+    const lim = Math.min(Math.max(Number(limit) || 100, 1), 500);
+    let prices = await query.limit(lim).lean();
 
-    if (sort === "price_desc" && prices.length > 0) {
-      prices = prices.map((p, index) => ({
-        ...p.toObject(),
-        isBestPrice: index === 0,
-      }));
+    // Deduplicate records (Keep latest for same crop + mandi)
+    const uniqueMap = new Map();
+    prices.forEach(p => {
+      const key = `${p.crop}-${p.mandi}`;
+      if (!uniqueMap.has(key)) {
+        uniqueMap.set(key, p);
+      }
+    });
+
+    let resultRows = Array.from(uniqueMap.values());
+
+    if (sort === "price_desc" && resultRows.length > 0) {
+      resultRows[0].isBestPrice = true;
     }
 
-    res.json({ success: true, count: prices.length, data: prices });
+    // Update generic cache
+    if (isGenericRequest) {
+      priceCache.data = resultRows;
+      priceCache.lastUpdated = Date.now();
+    }
+
+    const duration = Date.now() - startTime;
+    if (duration > 500) {
+      console.warn(`[${new Date().toISOString()}] [${requestId}] Slow API Response: ${duration}ms`);
+    }
+
+    res.json({
+      success: true,
+      count: resultRows.length,
+      data: resultRows,
+      source: "live",
+      lastUpdated: new Date(),
+      requestId
+    });
   } catch (err) {
-    res.status(500).json({ success: false, error: err.message });
+    console.error(`[${new Date().toISOString()}] [${requestId}] Error fetching mandi prices:`, err.message);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch market data",
+      message: err.message,
+      requestId
+    });
   }
 };
+
