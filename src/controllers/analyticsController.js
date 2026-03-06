@@ -1,9 +1,87 @@
-const { GoogleGenAI } = require("@google/genai");
+const { spawn } = require("child_process");
+const path = require("path");
 const MandiPrice = require("../models/MandiPrice");
 const AnalyticsCache = require("../models/AnalyticsCache"); // New Cache Layer
 
+// Baseline Prices for Data Synthesizer (INR per Quintal)
+const BASELINE_PRICES = {
+    "wheat": 2200,
+    "rice": 3200,
+    "tomato": 1800,
+    "onion": 1500,
+    "maize": 2000,
+    "potato": 1200
+};
+
 /**
- * @desc Get Price Forecast and Recommendation using Google Gemini (LLM)
+ * Executes the Python ML script with historical data via stdin
+ */
+const runPythonPrediction = async (historicalData, days) => {
+    return new Promise((resolve, reject) => {
+        const pythonScript = path.join(__dirname, "../ml/predict.py");
+        // Start Python process
+        const python = spawn("python3", [pythonScript]);
+
+        let dataString = "";
+        let errorString = "";
+
+        python.stdout.on("data", (data) => {
+            dataString += data.toString();
+        });
+
+        python.stderr.on("data", (data) => {
+            errorString += data.toString();
+        });
+
+        python.on("close", (code) => {
+            if (code !== 0 || errorString) {
+                return reject(new Error(`Python Error ${code}: ${errorString}`));
+            }
+            try {
+                const result = JSON.parse(dataString);
+                if (result.error) return reject(new Error(result.error));
+                resolve(result.predicted_prices);
+            } catch (err) {
+                reject(new Error("Failed to parse ML output"));
+            }
+        });
+
+        // Feed JSON data to Python model
+        const inputData = JSON.stringify({ historical: historicalData, days });
+        python.stdin.write(inputData);
+        python.stdin.end();
+    });
+};
+
+/**
+ * Intelligent Selling Recommendation Engine based on Math
+ */
+const generateRecommendation = (crop, mandi, historicalPrices, predictedPrices) => {
+    if (!predictedPrices || predictedPrices.length === 0) {
+        return "Not enough data to provide a recommendation.";
+    }
+
+    const maxPrice = Math.max(...predictedPrices);
+    const peakDayIndex = predictedPrices.indexOf(maxPrice);
+    const currentPrice = historicalPrices[historicalPrices.length - 1].price;
+
+    let demandStr = "Medium";
+    if (maxPrice > currentPrice * 1.05) demandStr = "High"; // 5% jump
+    else if (maxPrice < currentPrice) demandStr = "Low";
+
+    let dayString = peakDayIndex === 0 ? "tomorrow" : `in ${peakDayIndex + 1} days`;
+
+    if (demandStr === "High") {
+        return `We project a mathematical peak of ₹${maxPrice.toFixed(2)} ${dayString} for ${crop} in ${mandi}, indicating High demand. This mathematically represents an optimal window to sell.`;
+    } else if (demandStr === "Medium") {
+        return `Market trends indicate steady conditions. A forecasted high of ₹${maxPrice.toFixed(2)} is expected ${dayString}. Consider selling incrementally.`;
+    } else {
+        return `Algorithm indicates a downward trend with Low demand. It may be advisable to hold your crop and wait for a recovery cycle.`;
+    }
+};
+
+/**
+ * @desc Get Price Forecast and Recommendation using Custom Synthesizer & Python ML
  * @route GET /api/analytics/price-forecast
  */
 exports.getPriceForecast = async (req, res) => {
@@ -15,7 +93,7 @@ exports.getPriceForecast = async (req, res) => {
         }
 
         // --- CACHE LAYER CHECK ---
-        const todayStr = new Date().toISOString().split('T')[0]; // "YYYY-MM-DD"
+        const todayStr = new Date().toISOString().split('T')[0];
         const existingCache = await AnalyticsCache.findOne({
             crop: crop.toLowerCase(),
             mandi: mandi.toLowerCase(),
@@ -23,7 +101,7 @@ exports.getPriceForecast = async (req, res) => {
         });
 
         if (existingCache) {
-            console.log(`[Cache Hit] Returning instant cached LLM data for ${crop} in ${mandi}`);
+            console.log(`[Cache Hit] Returning instant cached ML data for ${crop} in ${mandi}`);
             return res.status(200).json({
                 success: true,
                 data: {
@@ -37,62 +115,36 @@ exports.getPriceForecast = async (req, res) => {
         }
         // --- END CACHE CHECK ---
 
-        const apiKey = process.env.GEMINI_API_KEY;
-        if (!apiKey) {
-            return res.status(500).json({
-                success: false,
-                message: "GEMINI_API_KEY is missing in your .env file. The LLM Prediction Engine requires this key to function."
+        // PHASE 1: DATA SYNTHESIZER
+        let basePrice = BASELINE_PRICES[crop.toLowerCase()] || 2000;
+
+        // Add a deterministic geo-location variance so different Mandis have different baseline prices
+        const mandiVariance = (mandi.length % 5) * 45 + (mandi.charCodeAt(0) || 0);
+        basePrice = basePrice + mandiVariance;
+
+        const historicalData = [];
+        const today = new Date();
+
+        // Generate 30 days of realistic history
+        for (let i = 30; i > 0; i--) {
+            const d = new Date(today);
+            d.setDate(today.getDate() - i);
+
+            // Add sine wave + random noise to simulate market conditions
+            const seasonalVariance = Math.sin(i * 0.2) * (basePrice * 0.05);
+            const randomNoise = (Math.random() - 0.5) * (basePrice * 0.02);
+            const simulatedPrice = basePrice + seasonalVariance + randomNoise;
+
+            historicalData.push({
+                date: d.toISOString().split('T')[0],
+                price: parseFloat(simulatedPrice.toFixed(2))
             });
         }
 
-        // Initialize Gemini
-        const ai = new GoogleGenAI({ apiKey: apiKey });
-
-        const prompt = `You are an expert AI agricultural commodities analyst in India.
-The user is requesting highly realistic historical and predicted wholesale prices for '${crop}' in '${mandi}' mandi.
-You MUST use your Google Search tool to find the most recent, real-world prices for this exact crop in this exact region before forecasting. Do not hallucinate. Ground your predictions in real search results.
-
-CRITICAL RULES:
-1. Prices MUST be in INR (₹) per Quintal (100kg).
-2. Historical data must cover exactly the last 7 days ending yesterday. Base this heavily on your search results.
-3. Predicted data must cover exactly the next ${days} days starting today.
-4. Provide a professional, probabilistic selling recommendation (e.g., "We project a potential peak..."). Ensure you do not speak with 100% certainty.
-
-Respond ONLY with a valid JSON object matching this exact schema:
-{
-  "historical": [
-    { "date": "YYYY-MM-DD", "price": 1850.50 }
-  ],
-  "predicted": [
-    { "date": "YYYY-MM-DD", "price": 1865.00 }
-  ],
-  "recommendation": "Your probabilistic advisory string here."
-}`;
-
-        // Call the LLM to synthesize data on the fly, using Google Search to ground it in reality
-        const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-                tools: [{ googleSearch: {} }] // Add Google Search Grounding to prevent hallucinations
-            }
-        });
-
-        let aiData;
-        try {
-            // Strip any markdown codeblock formatting if the LLM includes it
-            let rawText = response.text.replace(/```json/gi, "").replace(/```/g, "").trim();
-            aiData = JSON.parse(rawText);
-        } catch (e) {
-            throw new Error("Failed to parse LLM JSON format.");
-        }
-
-        // Check if DB caching is desired (Optional: save history to MongoDB)
-        // Since it's fully generated, this is mostly so the app doesn't break if other routes query DB
+        // Optional: Cache these 30 days into MandiPrice DB for local viewing
         try {
             await MandiPrice.deleteMany({ crop: crop.toLowerCase(), mandi: mandi });
-            // Optionally insert the newly generated history so other parts of the app have localized records
-            const records = aiData.historical.map(h => ({
+            const records = historicalData.map(h => ({
                 crop: crop.toLowerCase(),
                 mandi: mandi,
                 locationName: mandi,
@@ -101,34 +153,55 @@ Respond ONLY with a valid JSON object matching this exact schema:
                 date: new Date(h.date)
             }));
             await MandiPrice.insertMany(records);
+        } catch (dbErr) {
+            console.warn("Could not seed synthesized data to MandiPrice DB:", dbErr.message);
+        }
 
-            // SAVE TO FAST-CACHE FOR 24 HOURS
+        // PHASE 2: CALL PYTHON ML SCRIPT
+        const parsedDays = parseInt(days) || 7;
+        const predictedPricesArray = await runPythonPrediction(historicalData, parsedDays);
+
+        // Format Predicted Output
+        const predictedData = predictedPricesArray.map((price, idx) => {
+            const d = new Date(today);
+            d.setDate(today.getDate() + idx + 1);
+            return {
+                date: d.toISOString().split('T')[0],
+                price: price
+            };
+        });
+
+        // PHASE 3: RECOMMENDATION ENGINE
+        const recommendation = generateRecommendation(crop, mandi, historicalData, predictedPricesArray);
+
+        // SAVE FULL PAYLOAD TO FAST-CACHE
+        try {
             await AnalyticsCache.create({
                 crop: crop.toLowerCase(),
                 mandi: mandi.toLowerCase(),
                 dateCached: todayStr,
-                historical: aiData.historical,
-                predicted: aiData.predicted,
-                recommendation: aiData.recommendation
+                historical: historicalData,
+                predicted: predictedData,
+                recommendation: recommendation
             });
-
         } catch (dbErr) {
-            console.log("Could not cache LLM data to DB:", dbErr.message);
+            console.warn("Could not cache ML output to AnalyticsCache:", dbErr.message);
         }
 
+        // Return Data
         res.status(200).json({
             success: true,
             data: {
                 crop,
                 mandi,
-                historical: aiData.historical,
-                predicted: aiData.predicted,
-                recommendation: aiData.recommendation
+                historical: historicalData,
+                predicted: predictedData,
+                recommendation: recommendation
             }
         });
 
     } catch (err) {
-        console.error("LLM Analytics Error:", err);
+        console.error("ML Analytics Error:", err);
         res.status(500).json({
             success: false,
             error: "Predictive Analytics Engine Failed",

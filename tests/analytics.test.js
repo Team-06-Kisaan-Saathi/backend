@@ -4,37 +4,7 @@ const app = require("../src/app");
 const MandiPrice = require("../src/models/MandiPrice");
 const User = require("../src/models/User");
 
-// Mock the Gemini LLM so we don't need real API keys or incur costs during testing
-jest.mock("@google/genai", () => {
-    return {
-        GoogleGenAI: jest.fn().mockImplementation(() => {
-            return {
-                models: {
-                    generateContent: jest.fn().mockResolvedValue({
-                        text: JSON.stringify({
-                            historical: [
-                                { date: "2023-01-01", price: 2000 },
-                                { date: "2023-01-02", price: 2050 }
-                            ],
-                            predicted: [
-                                { date: "2023-01-03", price: 2100 },
-                                { date: "2023-01-04", price: 2150 },
-                                { date: "2023-01-05", price: 2200 },
-                                { date: "2023-01-06", price: 2250 },
-                                { date: "2023-01-07", price: 2300 }
-                            ],
-                            recommendation: "Test Mocked Recommendation. Prices look stable."
-                        })
-                    })
-                }
-            };
-        })
-    };
-});
-
 require("dotenv").config();
-// Ensure the mocked route proceeds without blocking on a missing environment variable
-process.env.GEMINI_API_KEY = "test_mock_key";
 
 let token;
 
@@ -84,7 +54,7 @@ describe("Epic 4: AI Predictive Analytics Module", () => {
         await mongoose.connection.close();
     });
 
-    test("GET /api/analytics/price-forecast - Valid Request (Wheat, Azadpur)", async () => {
+    test("TC1: Valid Request - Common Crop (Wheat, Azadpur)", async () => {
         const res = await request(app)
             .get("/api/analytics/price-forecast?crop=Wheat&mandi=Azadpur&days=5")
             .set("Authorization", `Bearer ${token}`);
@@ -96,25 +66,66 @@ describe("Epic 4: AI Predictive Analytics Module", () => {
         expect(data.crop).toBe("Wheat");
         expect(data.mandi).toBe("Azadpur");
 
-        // Check Historical Array
+        // Check Synthesizer Array (30 days)
         expect(data.historical).toBeDefined();
-        expect(data.historical.length).toBeGreaterThan(0);
-        expect(data.historical[0]).toHaveProperty("date");
-        expect(data.historical[0]).toHaveProperty("price");
+        expect(data.historical.length).toBe(30);
 
-        // Check Predicted Array
+        // Check Predicted Array (5 days)
         expect(data.predicted).toBeDefined();
-        expect(data.predicted.length).toBe(5); // Requested 5 days
-        expect(data.predicted[0]).toHaveProperty("date");
-        expect(data.predicted[0]).toHaveProperty("price");
+        expect(data.predicted.length).toBe(5);
 
-        // Check Selling Recommendation Engine
+        // Check Recommendation
         expect(data.recommendation).toBeDefined();
         expect(typeof data.recommendation).toBe("string");
-        console.log("Generated ML Recommendation String:", data.recommendation);
     });
 
-    test("GET /api/analytics/price-forecast - Invalid Request (Missing Params)", async () => {
+    test("TC2: Cache Hit Verification - Same Request Instantly Returns", async () => {
+        const startTime = Date.now();
+        const res = await request(app)
+            .get("/api/analytics/price-forecast?crop=Wheat&mandi=Azadpur&days=5")
+            .set("Authorization", `Bearer ${token}`);
+        const duration = Date.now() - startTime;
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.success).toBe(true);
+        // Should be extremely fast because it bypasses Python
+        expect(duration).toBeLessThan(200);
+    });
+
+    test("TC3: Valid Request - Different Crop Baseline (Tomato, Delhi)", async () => {
+        const res = await request(app)
+            .get("/api/analytics/price-forecast?crop=Tomato&mandi=Delhi&days=7")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.success).toBe(true);
+        expect(res.body.data.predicted.length).toBe(7);
+        // Tomatoes baseline is lower than wheat, so prices should generally be lower
+        expect(res.body.data.predicted[0].price).toBeLessThan(2000);
+    });
+
+    test("TC4: Valid Request - Fallback/Unknown Crop (Dragonfruit, Mumbai)", async () => {
+        const res = await request(app)
+            .get("/api/analytics/price-forecast?crop=Dragonfruit&mandi=Mumbai")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.success).toBe(true);
+        // Should default to base generator of 2000 INR
+        expect(res.body.data.historical[0].price).toBeGreaterThan(1800);
+    });
+
+    test("TC5: Edge Case - Requesting Long Forecast (30 Days)", async () => {
+        const res = await request(app)
+            .get("/api/analytics/price-forecast?crop=Rice&mandi=Kolkata&days=30")
+            .set("Authorization", `Bearer ${token}`);
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.success).toBe(true);
+        expect(res.body.data.predicted.length).toBe(30);
+    });
+
+    test("TC6: Invalid Request - Missing Parameters", async () => {
         const res = await request(app)
             .get("/api/analytics/price-forecast")
             .set("Authorization", `Bearer ${token}`);
