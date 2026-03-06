@@ -14,6 +14,7 @@ app.get("/", (req, res) => {
 });
 
 const userRoutes = require("./routes/userRoutes");
+const analyticsRoutes = require("./routes/analyticsRoutes");
 
 app.use("/api/users", userRoutes);
 app.use("/api/multimodal", require("./routes/multimodalRoutes"));
@@ -25,6 +26,7 @@ app.use("/api/inventory", require("./routes/inventoryRoutes"));
 app.use("/api/watchlist", require("./routes/watchlistRoutes"));
 app.use("/api/chat", require("./routes/chatRoutes"));
 app.use("/api/deals", require("./routes/dealRoutes"));
+app.use("/api/analytics", analyticsRoutes);
 
 
 //location routes
