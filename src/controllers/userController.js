@@ -13,10 +13,15 @@ exports.createUser = async (req, res) => {
 // GET ALL USERS
 exports.getUsers = async (req, res) => {
   try {
-    const users = await User.find();
-    res.json(users);
+    const { role } = req.query;
+    const query = role ? { role } : {};
+    const users = await User.find(query);
+    res.json({
+      success: true,
+      users
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
