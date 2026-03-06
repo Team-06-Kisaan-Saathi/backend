@@ -14,31 +14,38 @@ describe("Auction Module Full Verification", () => {
         if (mongoose.connection.readyState === 0) {
             await mongoose.connect(process.env.MONGO_URI);
         }
+
+        try {
+            await User.collection.dropIndexes();
+        } catch (e) { /* Ignore if it doesn't exist */ }
         await User.deleteMany({ phone: { $in: ["3333333333", "4444444444", "5555555555"] } });
         await Auction.deleteMany({});
 
         // 1. Register & Login Farmer
-        const fRes = await request(app).post("/api/auth/register").send({
-            name: "Farmer Two", phone: "3333333333", role: "farmer", password: "pwd"
+        await request(app).post("/api/auth/send-otp").send({ phone: "3333333333" });
+        await request(app).post("/api/auth/verify-otp").send({ phone: "3333333333", otp: (await User.findOne({ phone: "3333333333" })).otp });
+        const fRes = await request(app).post("/api/auth/signup-complete").send({
+            phone: "3333333333", pin: "1234", name: "Farmer Two", role: "farmer"
         });
         farmerId = fRes.body.user._id;
-        const fLogin = await request(app).post("/api/auth/login").send({ phone: "3333333333", password: "pwd" });
-        farmerToken = fLogin.body.token;
+        farmerToken = fRes.body.token;
 
         // 2. Register & Login Buyer
-        const bRes = await request(app).post("/api/auth/register").send({
-            name: "Buyer Two", phone: "4444444444", role: "buyer", password: "pwd"
+        await request(app).post("/api/auth/send-otp").send({ phone: "4444444444" });
+        await request(app).post("/api/auth/verify-otp").send({ phone: "4444444444", otp: (await User.findOne({ phone: "4444444444" })).otp });
+        const bRes = await request(app).post("/api/auth/signup-complete").send({
+            phone: "4444444444", pin: "1234", name: "Buyer Two", role: "buyer"
         });
         buyerId = bRes.body.user._id;
-        const bLogin = await request(app).post("/api/auth/login").send({ phone: "4444444444", password: "pwd" });
-        buyerToken = bLogin.body.token;
+        buyerToken = bRes.body.token;
 
         // 3. Register & Login Other Farmer (for negative test)
-        const ofRes = await request(app).post("/api/auth/register").send({
-            name: "Farmer Three", phone: "5555555555", role: "farmer", password: "pwd"
+        await request(app).post("/api/auth/send-otp").send({ phone: "5555555555" });
+        await request(app).post("/api/auth/verify-otp").send({ phone: "5555555555", otp: (await User.findOne({ phone: "5555555555" })).otp });
+        const ofRes = await request(app).post("/api/auth/signup-complete").send({
+            phone: "5555555555", pin: "1234", name: "Farmer Three", role: "farmer"
         });
-        const ofLogin = await request(app).post("/api/auth/login").send({ phone: "5555555555", password: "pwd" });
-        otherFarmerToken = ofLogin.body.token;
+        otherFarmerToken = ofRes.body.token;
 
         // Verify Users
         await User.updateMany({}, { otpVerified: true });

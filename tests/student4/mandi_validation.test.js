@@ -7,35 +7,29 @@ function validateMandiData(mandi) {
 }
 
 describe('Mandi Validation (Student 4)', () => {
-    let expect;
 
-    before(async () => {
-        const chai = await import('chai');
-        expect = chai.expect;
-    });
-
-    it('should return true for valid mandi data', () => {
+    test('should return true for valid mandi data', () => {
         const validMandi = {
             name: 'Azadpur',
             location: 'Delhi',
             prices: [{ crop: 'Wheat', price: 20 }]
         };
-        expect(validateMandiData(validMandi)).to.be.true;
+        expect(validateMandiData(validMandi)).toBe(true);
     });
 
-    it('should return false if name is missing', () => {
+    test('should return false if name is missing', () => {
         const invalidMandi = {
             location: 'Delhi'
         };
-        expect(validateMandiData(invalidMandi)).to.be.false;
+        expect(validateMandiData(invalidMandi)).toBe(false);
     });
 
-    it('should return false if prices is not an array', () => {
+    test('should return false if prices is not an array', () => {
         const invalidMandi = {
             name: 'Azadpur',
             location: 'Delhi',
             prices: 'invalid'
         };
-        expect(validateMandiData(invalidMandi)).to.be.false;
+        expect(validateMandiData(invalidMandi)).toBe(false);
     });
 });

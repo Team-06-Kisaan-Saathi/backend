@@ -13,16 +13,20 @@ describe("User Profile Management Module", () => {
         if (mongoose.connection.readyState === 0) {
             await mongoose.connect(process.env.MONGO_URI);
         }
+        try { await User.collection.dropIndexes(); } catch (e) { }
+
         await User.deleteMany({ phone: USER_PHONE });
 
-        // Register & Login
-        const res = await request(app).post("/api/auth/register").send({
-            name: "Profile User", phone: USER_PHONE, role: "farmer", password: "pwd"
+        // Register & Login Using OTP
+        await request(app).post("/api/auth/send-otp").send({ phone: USER_PHONE });
+        await request(app).post("/api/auth/verify-otp").send({ phone: USER_PHONE, otp: (await User.findOne({ phone: USER_PHONE })).otp });
+        const res = await request(app).post("/api/auth/signup-complete").send({
+            phone: USER_PHONE, pin: "1234", name: "Profile User", role: "farmer"
         });
-        userId = res.body.user._id;
 
-        const login = await request(app).post("/api/auth/login").send({ phone: USER_PHONE, password: "pwd" });
-        token = login.body.token;
+        userId = res.body.user._id;
+        token = res.body.token;
+
         await User.updateOne({ phone: USER_PHONE }, { otpVerified: true });
     });
 

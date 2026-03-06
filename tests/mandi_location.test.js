@@ -21,13 +21,15 @@ describe("Nearby Mandi Search Module", () => {
         await MandiPrice.deleteMany({});
         await User.deleteMany({ phone: "5556667777" });
 
+        try { await User.collection.dropIndexes(); } catch (e) { }
+
         // Register User
-        const res = await request(app).post("/api/auth/register").send({
-            name: "Geo User", phone: "5556667777", role: "farmer", password: "pwd"
+        await request(app).post("/api/auth/send-otp").send({ phone: "5556667777" });
+        await request(app).post("/api/auth/verify-otp").send({ phone: "5556667777", otp: (await User.findOne({ phone: "5556667777" })).otp });
+        const login = await request(app).post("/api/auth/signup-complete").send({
+            phone: "5556667777", pin: "1234", name: "Geo User", role: "farmer"
         });
 
-        // Login
-        const login = await request(app).post("/api/auth/login").send({ phone: "5556667777", password: "pwd" });
         token = login.body.token;
 
         // Verify User for access
@@ -67,8 +69,8 @@ describe("Nearby Mandi Search Module", () => {
 
         expect(res.statusCode).toBe(200);
         expect(res.body.data.length).toBe(1);
-        expect(res.body.data[0]._id).toBe("Azadpur Mandi (Delhi)");
-        expect(res.body.data[0].distance).toBeLessThan(100); // Should be effectively 0
+        expect(res.body.data[0].mandiId).toBe("Azadpur Mandi (Delhi)");
+        expect(res.body.data[0].distanceKm).toBeLessThan(100); // Updated to test distanceKm instead of raw object
     });
 
     test("Find Mandi from far away (should be empty)", async () => {
@@ -90,6 +92,6 @@ describe("Nearby Mandi Search Module", () => {
 
         expect(res.statusCode).toBe(200);
         expect(res.body.data.length).toBeGreaterThan(0);
-        expect(res.body.data[0]._id).toBe("Azadpur Mandi (Delhi)");
+        expect(res.body.data[0].mandiId).toBe("Azadpur Mandi (Delhi)");
     });
 });

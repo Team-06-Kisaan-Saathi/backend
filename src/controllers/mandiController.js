@@ -180,10 +180,17 @@ exports.getMandiPrices = async (req, res) => {
       }
     });
 
-    let resultRows = Array.from(uniqueMap.values());
+    let resultRows = Array.from(uniqueMap.values()).map(row => ({
+      ...row,
+      isBestPrice: false
+    }));
 
-    if (sort === "price_desc" && resultRows.length > 0) {
-      resultRows[0].isBestPrice = true;
+    // Fix: Redo the in-memory sort after mapping values
+    if (sort === "price_desc") {
+      resultRows.sort((a, b) => b.pricePerQuintal - a.pricePerQuintal);
+      if (resultRows.length > 0) resultRows[0].isBestPrice = true;
+    } else if (sort === "price_asc") {
+      resultRows.sort((a, b) => a.pricePerQuintal - b.pricePerQuintal);
     }
 
     // Update generic cache

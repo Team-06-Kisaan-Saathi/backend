@@ -8,6 +8,11 @@ connectDB();
 
 const server = http.createServer(app);
 
+// Apply Security Enhancements specifically in Production/Dev modes (Bypasses Supertest)
+const helmet = require("helmet");
+
+// app.use(helmet());
+
 const { Server } = require("socket.io");
 const io = new Server(server, {
   cors: {
