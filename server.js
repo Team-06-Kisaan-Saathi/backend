@@ -18,6 +18,9 @@ const io = new Server(server, {
 require("./src/sockets/auctionSocket")(io);
 require("./src/sockets/chatSocket")(io);
 
+// Expose io so controllers can emit socket events
+app.set("io", io);
+
 const PORT = process.env.PORT || 5001;
 
 server.listen(PORT, "0.0.0.0", () => {
