@@ -83,7 +83,9 @@ exports.getAuctions = async (req, res) => {
       if (maxPrice) query.basePrice.$lte = Number(maxPrice);
     }
 
-    const auctions = await Auction.find(query).sort({ createdAt: -1 });
+    const auctions = await Auction.find(query)
+      .populate("bids.buyerId", "name")
+      .sort({ createdAt: -1 });
     res.json(auctions);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -94,7 +96,9 @@ exports.getAuctions = async (req, res) => {
 exports.getMyBids = async (req, res) => {
   try {
     const myAuctions = await Auction.find({ "bids.buyerId": req.user._id })
-      .sort({ "bids.time": -1 });
+      .populate("bids.buyerId", "name")
+      .populate("farmerId", "name")
+      .sort({ updatedAt: -1 });
     res.json(myAuctions);
   } catch (err) {
     res.status(500).json({ error: err.message });
