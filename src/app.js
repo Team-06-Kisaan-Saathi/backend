@@ -27,6 +27,8 @@ app.use("/api/inventory", require("./routes/inventoryRoutes"));
 app.use("/api/watchlist", require("./routes/watchlistRoutes"));
 app.use("/api/chat", require("./routes/chatRoutes"));
 app.use("/api/deals", require("./routes/dealRoutes"));
+app.use("/api/admin", require("./routes/adminRoutes"));
+app.use("/api/invoices", require("./routes/invoiceRoutes"));
 app.use("/api/analytics", analyticsRoutes);
 
 
