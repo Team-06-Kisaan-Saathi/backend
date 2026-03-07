@@ -164,6 +164,11 @@ exports.loginUser = async (req, res) => {
       return res.status(401).json({ success: false, message: "Invalid credentials" });
     }
 
+    // Ensure the user actually has a password set (some users may have bailed halfway through OTP signup)
+    if (!user.password) {
+      return res.status(400).json({ success: false, message: "Account setup incomplete. Please complete signup to set a PIN." });
+    }
+
     // Check if password (PIN) matches
     const isMatch = await user.matchPassword(pin);
 
