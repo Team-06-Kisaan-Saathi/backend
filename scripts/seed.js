@@ -90,7 +90,7 @@ const seedDB = async () => {
             phone: "9999999999",
             role: "admin",
             language: "en",
-            password: "password123",
+            password: "123456",
             otpVerified: true,
             verificationStatus: "approved"
         });
