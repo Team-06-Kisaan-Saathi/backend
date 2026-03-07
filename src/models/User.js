@@ -72,6 +72,15 @@ const userSchema = new mongoose.Schema({
   },
   verificationComment: {
     type: String // Reason for rejection
+  },
+  totalLandArea: {
+    type: Number,
+    default: 0
+  },
+  totalLandAreaUnit: {
+    type: String,
+    enum: ["acres", "hectares"],
+    default: "acres"
   }
 
 }, { timestamps: true });

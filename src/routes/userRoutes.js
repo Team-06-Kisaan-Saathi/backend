@@ -58,6 +58,10 @@ router.get(
 // Get saved location (PROTECTED)
 router.get("/location", protect, userController.getMyLocation);
 
+// PIN and Password (PROTECTED)
+router.post("/verify-pin", protect, userController.verifyPin);
+router.post("/change-password", protect, userController.changePassword);
+
 
 
 
