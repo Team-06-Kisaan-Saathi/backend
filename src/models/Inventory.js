@@ -19,6 +19,11 @@ const inventorySchema = new mongoose.Schema(
             type: Number,
             required: true
         },
+        category: {
+            type: String,
+            enum: ["Grains", "Vegetables", "Fruits", "Spices", "Other"],
+            default: "Other"
+        },
         status: {
             type: String,
             enum: ["DRAFT", "ACTIVE", "SOLD", "DEACTIVATED"],

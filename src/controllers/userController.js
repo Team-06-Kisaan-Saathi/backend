@@ -13,10 +13,15 @@ exports.createUser = async (req, res) => {
 // GET ALL USERS
 exports.getUsers = async (req, res) => {
   try {
-    const users = await User.find();
-    res.json(users);
+    const { role } = req.query;
+    const query = role ? { role } : {};
+    const users = await User.find(query);
+    res.json({
+      success: true,
+      users
+    });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message });
   }
 };
 
@@ -181,7 +186,7 @@ exports.updateLocation = async (req, res) => {
 // UPDATE PROFILE (Name, Language)
 exports.updateProfile = async (req, res) => {
   try {
-    const { name, language } = req.body;
+    const { name, language, totalLandArea, totalLandAreaUnit } = req.body;
 
     const user = await User.findById(req.user._id);
     if (!user) {
@@ -190,6 +195,8 @@ exports.updateProfile = async (req, res) => {
 
     if (name) user.name = name;
     if (language) user.language = language;
+    if (totalLandArea !== undefined) user.totalLandArea = totalLandArea;
+    if (totalLandAreaUnit) user.totalLandAreaUnit = totalLandAreaUnit;
 
     await user.save();
 
@@ -251,5 +258,62 @@ exports.getMyLocation = async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+};
+
+// VERIFY CURRENT PIN
+exports.verifyPin = async (req, res) => {
+  try {
+    const { pin } = req.body;
+    if (!pin) {
+      return res.status(400).json({ success: false, message: "Please provide your PIN" });
+    }
+
+    const user = await User.findById(req.user._id).select("+password");
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const isMatch = await user.matchPassword(pin);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: "Incorrect PIN" });
+    }
+
+    res.json({ success: true, message: "PIN verified" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+};
+
+// CHANGE PIN (PASSWORD)
+exports.changePassword = async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+
+    if (!currentPassword || !newPassword) {
+      return res.status(400).json({ success: false, message: "Please provide current and new PIN" });
+    }
+
+    // Validate new PIN
+    if (!/^\d{4,6}$/.test(newPassword)) {
+      return res.status(400).json({ success: false, message: "New PIN must be 4-6 digits only." });
+    }
+
+    const user = await User.findById(req.user._id).select("+password");
+    if (!user) {
+      return res.status(404).json({ success: false, message: "User not found" });
+    }
+
+    const isMatch = await user.matchPassword(currentPassword);
+    if (!isMatch) {
+      return res.status(401).json({ success: false, message: "Incorrect current PIN" });
+    }
+
+    user.password = newPassword;
+    await user.save();
+
+    res.json({ success: true, message: "PIN updated successfully" });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
   }
 };
