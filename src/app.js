@@ -3,8 +3,17 @@ const connectDB = require("./config/db");
 require("dotenv").config();
 
 const app = express();
+const cors = require("cors");
 
 app.use(express.json());
+app.use(cors({
+  origin: [
+    "http://localhost:3000",
+    "http://localhost:5173",
+    "https://team-06-kisaan-saathi.github.io"
+  ],
+  credentials: true
+}));
 
 if (process.env.NODE_ENV !== "test") {
   connectDB();

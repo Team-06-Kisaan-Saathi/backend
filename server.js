@@ -16,7 +16,13 @@ const helmet = require("helmet");
 const { Server } = require("socket.io");
 const io = new Server(server, {
   cors: {
-    origin: "*"
+    origin: [
+      "http://localhost:3000",
+      "http://localhost:5173",
+      "https://team-06-kisaan-saathi.github.io"
+    ],
+    credentials: true,
+    methods: ["GET", "POST"]
   }
 });
 
