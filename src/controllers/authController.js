@@ -31,7 +31,8 @@ exports.registerUser = async (req, res) => {
  */
 exports.sendOTP = async (req, res) => {
   try {
-    const { phone } = req.body;
+    let { phone } = req.body;
+    phone = phone.replace(/\D/g, '').slice(-10);
 
     let user = await User.findOne({ phone });
     if (!user) {
@@ -62,7 +63,8 @@ exports.sendOTP = async (req, res) => {
  */
 exports.verifyOTP = async (req, res) => {
   try {
-    const { phone, otp } = req.body;
+    let { phone, otp } = req.body;
+    phone = phone.replace(/\D/g, '').slice(-10);
 
     const user = await User.findOne({ phone });
     if (!user || user.otp !== otp) {
@@ -94,11 +96,12 @@ exports.verifyOTP = async (req, res) => {
  */
 exports.completeSignup = async (req, res) => {
   try {
-    const { phone, pin, name, role } = req.body;
+    let { phone, pin, name, role } = req.body;
 
     if (!phone || !pin || !name || !role) {
       return res.status(400).json({ success: false, message: "Please provide phone, pin, name, and role." });
     }
+    phone = phone.replace(/\D/g, '').slice(-10);
 
     // Validate PIN (Digits only, 4-6 length)
     if (!/^\d{4,6}$/.test(pin)) {
@@ -150,12 +153,13 @@ exports.completeSignup = async (req, res) => {
  */
 exports.loginUser = async (req, res) => {
   try {
-    const { phone, pin } = req.body;
+    let { phone, pin } = req.body;
 
     // Validate phone & pin
     if (!phone || !pin) {
       return res.status(400).json({ success: false, message: "Please provide phone and pin" });
     }
+    phone = phone.replace(/\D/g, '').slice(-10);
 
     // Check for user
     const user = await User.findOne({ phone }).select("+password");
