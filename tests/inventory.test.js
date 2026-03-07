@@ -17,24 +17,14 @@ describe("Inventory Module", () => {
         await User.deleteMany({ phone: "9999999999" });
         await Inventory.deleteMany({});
 
-        // Create Farmer
-        await request(app).post("/api/auth/register").send({
-            name: "Test Farmer",
-            phone: "9999999999",
-            role: "farmer",
-            password: "password123" // Field might be ignored but sending anyway
-        });
+        try { await User.collection.dropIndexes(); } catch (e) { }
 
-        // Send OTP
-        const otpRes = await request(app).post("/api/auth/send-otp").send({
-            phone: "9999999999"
-        });
-        const otp = otpRes.body.otp;
+        // Create Farmer via OTP Action
+        await request(app).post("/api/auth/send-otp").send({ phone: "9999999999" });
+        await request(app).post("/api/auth/verify-otp").send({ phone: "9999999999", otp: (await User.findOne({ phone: "9999999999" })).otp });
 
-        // Verify OTP to get Token
-        const verifyRes = await request(app).post("/api/auth/verify-otp").send({
-            phone: "9999999999",
-            otp: otp
+        const verifyRes = await request(app).post("/api/auth/signup-complete").send({
+            phone: "9999999999", pin: "1234", name: "Test Farmer", role: "farmer"
         });
 
         farmerToken = verifyRes.body.token;

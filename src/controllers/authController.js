@@ -21,7 +21,7 @@ exports.registerUser = async (req, res) => {
       }
     });
   } catch (err) {
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ success: false, error: err.message, stack: err.stack });
   }
 };
 

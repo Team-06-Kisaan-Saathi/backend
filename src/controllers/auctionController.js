@@ -49,6 +49,16 @@ exports.closeAuction = async (req, res) => {
 
     await auction.save();
 
+    // Emit auctionClosed to all buyers watching this auction
+    const io = req.app.get("io");
+    if (io) {
+      io.to(req.params.id).emit("auctionClosed", {
+        auctionId: req.params.id,
+        winningBid: auction.winningBid || null,
+        crop: auction.crop,
+      });
+    }
+
     res.json({
       success: true,
       message: "Auction closed",
@@ -62,9 +72,16 @@ exports.closeAuction = async (req, res) => {
 // Get all auctions with filters
 exports.getAuctions = async (req, res) => {
   try {
-    const { search, minPrice, maxPrice, cropType } = req.query;
+    const { search, minPrice, maxPrice, cropType, status } = req.query;
 
-    const query = { status: "OPEN" }; // Default to OPEN
+    const query = {};
+
+    // Status filter: default OPEN, or ALL for both
+    if (!status || status === "OPEN") {
+      query.status = "OPEN";
+    } else if (status !== "ALL") {
+      query.status = status;
+    }
 
     // Search by crop name (case-insensitive)
     if (search) {
@@ -73,7 +90,7 @@ exports.getAuctions = async (req, res) => {
 
     // Filter by Crop Type
     if (cropType) {
-      query.crop = { $regex: cropType, $options: "i" }; // Assuming crop field holds type or name
+      query.crop = { $regex: cropType, $options: "i" };
     }
 
     // Filter by Price Range
@@ -83,7 +100,11 @@ exports.getAuctions = async (req, res) => {
       if (maxPrice) query.basePrice.$lte = Number(maxPrice);
     }
 
-    const auctions = await Auction.find(query).sort({ createdAt: -1 });
+    const auctions = await Auction.find(query)
+      .populate("bids.buyerId", "name")
+      .populate("farmerId", "name phone")
+      .populate("winningBid.buyerId", "name phone")
+      .sort({ createdAt: -1 });
     res.json(auctions);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -94,7 +115,9 @@ exports.getAuctions = async (req, res) => {
 exports.getMyBids = async (req, res) => {
   try {
     const myAuctions = await Auction.find({ "bids.buyerId": req.user._id })
-      .sort({ "bids.time": -1 });
+      .populate("bids.buyerId", "name")
+      .populate("farmerId", "name phone")
+      .sort({ updatedAt: -1 });
     res.json(myAuctions);
   } catch (err) {
     res.status(500).json({ error: err.message });

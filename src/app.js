@@ -3,6 +3,7 @@ const connectDB = require("./config/db");
 require("dotenv").config();
 
 const app = express();
+
 app.use(express.json());
 
 if (process.env.NODE_ENV !== "test") {
@@ -14,6 +15,7 @@ app.get("/", (req, res) => {
 });
 
 const userRoutes = require("./routes/userRoutes");
+const analyticsRoutes = require("./routes/analyticsRoutes");
 
 app.use("/api/users", userRoutes);
 app.use("/api/multimodal", require("./routes/multimodalRoutes"));
@@ -27,6 +29,7 @@ app.use("/api/chat", require("./routes/chatRoutes"));
 app.use("/api/deals", require("./routes/dealRoutes"));
 app.use("/api/admin", require("./routes/adminRoutes"));
 app.use("/api/invoices", require("./routes/invoiceRoutes"));
+app.use("/api/analytics", analyticsRoutes);
 
 
 //location routes

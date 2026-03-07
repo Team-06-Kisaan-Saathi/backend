@@ -13,24 +13,28 @@ describe("User Verification Module", () => {
         if (mongoose.connection.readyState === 0) {
             await mongoose.connect(process.env.MONGO_URI);
         }
+        try { await User.collection.dropIndexes(); } catch (e) { }
+
         await User.deleteMany({ phone: { $in: ["6666666666", "7777777777"] } });
 
         // Register Farmer
-        const farmerRes = await request(app).post("/api/auth/register").send({
-            name: "Farmer Verify", phone: "6666666666", role: "farmer", password: "pwd"
+        await request(app).post("/api/auth/send-otp").send({ phone: "6666666666" });
+        await request(app).post("/api/auth/verify-otp").send({ phone: "6666666666", otp: (await User.findOne({ phone: "6666666666" })).otp });
+        const farmerRes = await request(app).post("/api/auth/signup-complete").send({
+            phone: "6666666666", pin: "1234", name: "Farmer Verify", role: "farmer"
         });
         farmerId = farmerRes.body.user._id;
-        const fLogin = await request(app).post("/api/auth/login").send({ phone: "6666666666", password: "pwd" });
-        farmerToken = fLogin.body.token;
+        farmerToken = farmerRes.body.token;
 
-        // Register & Create Admin (simulated by updating role directly)
-        const adminRes = await request(app).post("/api/auth/register").send({
-            name: "Admin User", phone: "7777777777", role: "farmer", password: "pwd"
+        // Register & Create Admin
+        await request(app).post("/api/auth/send-otp").send({ phone: "7777777777" });
+        await request(app).post("/api/auth/verify-otp").send({ phone: "7777777777", otp: (await User.findOne({ phone: "7777777777" })).otp });
+        const adminRes = await request(app).post("/api/auth/signup-complete").send({
+            phone: "7777777777", pin: "1234", name: "Admin User", role: "admin"
         });
-        const adminLogin = await request(app).post("/api/auth/login").send({ phone: "7777777777", password: "pwd" });
-        adminToken = adminLogin.body.token;
+        adminToken = adminRes.body.token;
 
-        await User.findByIdAndUpdate(adminRes.body.user._id, { role: "admin" });
+        await User.findByIdAndUpdate(adminRes.body.user._id, { role: "admin", otpVerified: true });
     });
 
     afterAll(async () => {

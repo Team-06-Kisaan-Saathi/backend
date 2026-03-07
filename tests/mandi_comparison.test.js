@@ -16,15 +16,20 @@ describe("Mandi Price Comparison Module", () => {
         if (mongoose.connection.readyState === 0) {
             await mongoose.connect(process.env.MONGO_URI);
         }
+        try { await User.collection.dropIndexes(); } catch (e) { }
+
         await MandiPrice.deleteMany({});
         await User.deleteMany({ phone: "9990001111" });
 
-        // Register & Login
-        await request(app).post("/api/auth/register").send({
-            name: "Price User", phone: "9990001111", role: "farmer", password: "pwd"
+        // Register & Login using OTP Flow
+        await request(app).post("/api/auth/send-otp").send({ phone: "9990001111" });
+        await request(app).post("/api/auth/verify-otp").send({ phone: "9990001111", otp: (await User.findOne({ phone: "9990001111" })).otp });
+
+        const registerRes = await request(app).post("/api/auth/signup-complete").send({
+            phone: "9990001111", pin: "1234", name: "Price User", role: "farmer"
         });
-        const login = await request(app).post("/api/auth/login").send({ phone: "9990001111", password: "pwd" });
-        token = login.body.token;
+        token = registerRes.body.token;
+
         await User.updateOne({ phone: "9990001111" }, { otpVerified: true });
     });
 

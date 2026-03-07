@@ -45,6 +45,11 @@ const auctionSchema = new mongoose.Schema(
       default: "OPEN"
     },
 
+    extendedHours: {
+      type: Number,
+      default: 0
+    },
+
     bids: [bidSchema],
 
     winningBid: {

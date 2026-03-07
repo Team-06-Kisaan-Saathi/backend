@@ -11,30 +11,32 @@ let farmerId, buyerId;
 
 describe("Auction Module Enhancements", () => {
     beforeAll(async () => {
-        await mongoose.connect(process.env.MONGO_URI);
+        if (mongoose.connection.readyState === 0) {
+            await mongoose.connect(process.env.MONGO_URI);
+        }
+        try { await User.collection.dropIndexes(); } catch (e) { }
+
         // Clean up
         await User.deleteMany({ phone: { $in: ["1111111111", "2222222222"] } });
         await Auction.deleteMany({});
 
         // Register Farmer
-        const farmerRes = await request(app).post("/api/auth/register").send({
-            name: "Farmer One", phone: "1111111111", role: "farmer", password: "pwd"
+        await request(app).post("/api/auth/send-otp").send({ phone: "1111111111" });
+        await request(app).post("/api/auth/verify-otp").send({ phone: "1111111111", otp: (await User.findOne({ phone: "1111111111" })).otp });
+        const farmerRes = await request(app).post("/api/auth/signup-complete").send({
+            phone: "1111111111", pin: "1234", name: "Farmer One", role: "farmer"
         });
         farmerId = farmerRes.body.user._id;
-
-        // Login Farmer
-        const fLogin = await request(app).post("/api/auth/login").send({ phone: "1111111111", password: "pwd" });
-        farmerToken = fLogin.body.token;
+        farmerToken = farmerRes.body.token;
 
         // Register Buyer
-        const buyerRes = await request(app).post("/api/auth/register").send({
-            name: "Buyer One", phone: "2222222222", role: "buyer", password: "pwd"
+        await request(app).post("/api/auth/send-otp").send({ phone: "2222222222" });
+        await request(app).post("/api/auth/verify-otp").send({ phone: "2222222222", otp: (await User.findOne({ phone: "2222222222" })).otp });
+        const buyerRes = await request(app).post("/api/auth/signup-complete").send({
+            phone: "2222222222", pin: "1234", name: "Buyer One", role: "buyer"
         });
         buyerId = buyerRes.body.user._id;
-
-        // Login Buyer
-        const bLogin = await request(app).post("/api/auth/login").send({ phone: "2222222222", password: "pwd" });
-        buyerToken = bLogin.body.token;
+        buyerToken = buyerRes.body.token;
 
         // Verify Users are Verified (simulated manually)
         await User.updateMany({}, { otpVerified: true });

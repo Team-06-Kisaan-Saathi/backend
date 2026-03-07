@@ -13,14 +13,19 @@ describe("User Location Update Module", () => {
         if (mongoose.connection.readyState === 0) {
             await mongoose.connect(process.env.MONGO_URI);
         }
+        try { await User.collection.dropIndexes(); } catch (e) { }
+
         await User.deleteMany({ phone: USER_PHONE });
 
-        // Register & Login
-        await request(app).post("/api/auth/register").send({
-            name: "Loc User", phone: USER_PHONE, role: "farmer", password: "pwd"
+        // Register & Login using OTP Flow
+        await request(app).post("/api/auth/send-otp").send({ phone: USER_PHONE });
+        await request(app).post("/api/auth/verify-otp").send({ phone: USER_PHONE, otp: (await User.findOne({ phone: USER_PHONE })).otp });
+
+        const registerRes = await request(app).post("/api/auth/signup-complete").send({
+            phone: USER_PHONE, pin: "1234", name: "Loc User", role: "farmer"
         });
-        const login = await request(app).post("/api/auth/login").send({ phone: USER_PHONE, password: "pwd" });
-        token = login.body.token;
+        token = registerRes.body.token;
+
         await User.updateOne({ phone: USER_PHONE }, { otpVerified: true });
     });
 
@@ -30,7 +35,7 @@ describe("User Location Update Module", () => {
     });
 
     test("Update Location with Coordinates", async () => {
-        const res = await request(app).put("/api/users/location")
+        const res = await request(app).post("/api/users/location")
             .set("Authorization", `Bearer ${token}`)
             .send({
                 lat: 28.7041,
@@ -51,7 +56,7 @@ describe("User Location Update Module", () => {
     });
 
     test("Fail if coords missing", async () => {
-        const res = await request(app).put("/api/users/location")
+        const res = await request(app).post("/api/users/location")
             .set("Authorization", `Bearer ${token}`)
             .send({
                 address: "Only Address"
