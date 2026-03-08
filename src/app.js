@@ -36,6 +36,7 @@ app.use("/api/admin", require("./routes/adminRoutes"));
 app.use("/api/invoices", require("./routes/invoiceRoutes"));
 app.use("/api/analytics", analyticsRoutes);
 app.use("/api/notifications", require("./routes/notificationRoutes"));
+app.use("/api/support", require("./routes/supportRoutes"));
 
 
 //location routes
