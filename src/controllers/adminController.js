@@ -2,12 +2,14 @@ const User = require("../models/User");
 const CropListing = require("../models/Inventory");
 const Deal = require("../models/Deal");
 const Auction = require("../models/Auction");
+const SupportRequest = require("../models/SupportRequest");
 
 exports.getStats = async (req, res) => {
     try {
         const totalFarmers = await User.countDocuments({ role: "farmer" });
         const totalBuyers = await User.countDocuments({ role: "buyer" });
         const activeListings = await CropListing.countDocuments({ status: "ACTIVE" });
+        const pendingSupportRequests = await SupportRequest.countDocuments({ status: "pending" });
 
         // Revenue calculation (total amount of completed deals + auctions)
         const completedDeals = await Deal.find({ status: "ACCEPTED" });
@@ -87,6 +89,7 @@ exports.getStats = async (req, res) => {
                 weeklyRevenue: weeklyRevenueK,
                 reportedListings: 0,
                 pendingApprovals: 0,
+                pendingSupportRequests: pendingSupportRequests,
             }
         });
     } catch (err) {
