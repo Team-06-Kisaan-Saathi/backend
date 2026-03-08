@@ -63,6 +63,33 @@ exports.getChatMessages = async (req, res) => {
     }
 };
 
+// Get all chats for the current user
+exports.getUserChats = async (req, res) => {
+    try {
+        const userId = req.user._id;
+
+        // Find all chats where the user is a participant
+        const chats = await Chat.find({ participants: userId })
+            .populate("participants", "name phone role")
+            .sort({ updatedAt: -1 });
+
+        // Format to include lastMessage snippet
+        const formattedChats = chats.map(chat => {
+            const chatObj = chat.toObject();
+            const lastMsg = chat.messages?.length ? chat.messages[chat.messages.length - 1] : null;
+            return {
+                ...chatObj,
+                lastMessage: lastMsg?.content || "",
+                lastMessageTime: lastMsg?.timestamp || chat.updatedAt
+            };
+        });
+
+        res.json({ success: true, chats: formattedChats });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+};
+
 // Upload Image (Mock for now - usually upload to S3/Cloudinary)
 exports.uploadImage = async (req, res) => {
     // In a real app, middleware like 'multer' would handle file upload

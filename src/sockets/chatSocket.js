@@ -14,6 +14,12 @@ module.exports = (io) => {
             console.log(`Socket ${socket.id} joined Chat ${chatId}`);
         });
 
+        // Join personal user room to receive global messages
+        socket.on("joinUserRoom", (userId) => {
+            socket.join(`user_${userId}`);
+            console.log(`Socket ${socket.id} joined personal room user_${userId}`);
+        });
+
         // Send Message
         socket.on("sendMessage", async (data) => {
             try {
@@ -48,6 +54,14 @@ module.exports = (io) => {
                     // 3. Notify recipient (Persistent & Real-time via main io)
                     const recipient = chat.participants.find(p => p._id.toString() !== senderId.toString());
                     const sender = chat.participants.find(p => p._id.toString() === senderId.toString());
+
+                    // Broadcast to recipient's personal room for global unread counter updates
+                    if (recipient) {
+                        chatNamespace.to(`user_${recipient._id.toString()}`).emit("newMessage", {
+                            chatId,
+                            message: newMessage
+                        });
+                    }
 
                     if (recipient) {
                         await createNotification(io, {
