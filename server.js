@@ -16,18 +16,14 @@ const helmet = require("helmet");
 const { Server } = require("socket.io");
 const io = new Server(server, {
   cors: {
-    origin: [
-      "http://localhost:3000",
-      "http://localhost:5173",
-      "https://team-06-kisaan-saathi.github.io"
-    ],
-    credentials: true,
+    origin: "*",
     methods: ["GET", "POST"]
   }
 });
 
 require("./src/sockets/auctionSocket")(io);
 require("./src/sockets/chatSocket")(io);
+require("./src/sockets/notificationSocket")(io);
 
 // Expose io so controllers can emit socket events
 app.set("io", io);

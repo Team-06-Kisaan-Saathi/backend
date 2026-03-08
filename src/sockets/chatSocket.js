@@ -1,10 +1,12 @@
 const Chat = require("../models/Chat");
+const { createNotification } = require("../controllers/notificationController");
+const User = require("../models/User");
 
 module.exports = (io) => {
-    const chatNamespace = io.of("/chat"); // Use namespace to separate from auction
+    const chatNamespace = io.of("/chat");
 
     chatNamespace.on("connection", (socket) => {
-        console.log("User connected to Chat:", socket.id);
+        console.log("User connected to Chat namespace:", socket.id);
 
         // Join a specific chat room (Chat ID)
         socket.on("joinChat", (chatId) => {
@@ -18,7 +20,6 @@ module.exports = (io) => {
                 const { chatId, senderId, content, type } = data;
 
                 // 1. Save to DB
-                // Use findOneAndUpdate to push message and update lastMessage time
                 const chat = await Chat.findByIdAndUpdate(
                     chatId,
                     {
@@ -32,18 +33,32 @@ module.exports = (io) => {
                         },
                         lastMessage: new Date()
                     },
-                    { new: true } // Return updated doc
-                );
+                    { new: true }
+                ).populate("participants");
 
                 if (chat) {
-                    // Get the message object we just added (last one)
                     const newMessage = chat.messages[chat.messages.length - 1];
 
-                    // 2. Broadcast to Room
+                    // 2. Broadcast to Chat Room
                     chatNamespace.to(chatId).emit("newMessage", {
                         chatId,
                         message: newMessage
                     });
+
+                    // 3. Notify recipient (Persistent & Real-time via main io)
+                    const recipient = chat.participants.find(p => p._id.toString() !== senderId.toString());
+                    const sender = chat.participants.find(p => p._id.toString() === senderId.toString());
+
+                    if (recipient) {
+                        await createNotification(io, {
+                            userId: recipient._id,
+                            role: recipient.role,
+                            title: `New Message from ${sender?.name || "User"}`,
+                            message: type === "image" ? "Sent an image" : content.substring(0, 50),
+                            type: "chat",
+                            relatedEntityId: chatId
+                        });
+                    }
                 }
 
             } catch (err) {
@@ -55,22 +70,15 @@ module.exports = (io) => {
         // Mark Messages as Read
         socket.on("markRead", async (data) => {
             try {
-                const { chatId, userId } = data; // userId is the reader
+                const { chatId, userId } = data;
 
-                // Mark all messages NOT sent by userId as read
                 await Chat.updateOne(
                     { _id: chatId },
-                    {
-                        $set: { "messages.$[elem].read": true }
-                    },
-                    {
-                        arrayFilters: [{ "elem.sender": { $ne: userId } }]
-                    }
+                    { $set: { "messages.$[elem].read": true } },
+                    { arrayFilters: [{ "elem.sender": { $ne: userId } }] }
                 );
 
-                // Notify others in room
                 chatNamespace.to(chatId).emit("messagesRead", { chatId, readerId: userId });
-
             } catch (err) {
                 console.error("Error marking read:", err);
             }
