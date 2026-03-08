@@ -57,6 +57,31 @@ exports.closeAuction = async (req, res) => {
         winningBid: auction.winningBid || null,
         crop: auction.crop,
       });
+
+      // 1. Notify Farmer
+      const { createNotification } = require("./notificationController");
+      await createNotification(io, {
+        userId: auction.farmerId,
+        role: "farmer",
+        title: "Auction Ended",
+        message: auction.winningBid
+          ? `Your auction for ${auction.crop} ended. Winner offered ₹${auction.winningBid.amount}`
+          : `Your auction for ${auction.crop} ended with no bids.`,
+        type: "auction",
+        relatedEntityId: auction._id
+      });
+
+      // 2. Notify Winner
+      if (auction.winningBid) {
+        await createNotification(io, {
+          userId: auction.winningBid.buyerId,
+          role: "buyer",
+          title: "You won the auction!",
+          message: `Congratulations! You won the auction for ${auction.crop} at ₹${auction.winningBid.amount}`,
+          type: "auction",
+          relatedEntityId: auction._id
+        });
+      }
     }
 
     res.json({

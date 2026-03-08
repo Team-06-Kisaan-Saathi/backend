@@ -7,11 +7,7 @@ const cors = require("cors");
 
 app.use(express.json());
 app.use(cors({
-  origin: [
-    "http://localhost:3000",
-    "http://localhost:5173",
-    "https://team-06-kisaan-saathi.github.io"
-  ],
+  origin: true,
   credentials: true
 }));
 
@@ -39,6 +35,7 @@ app.use("/api/deals", require("./routes/dealRoutes"));
 app.use("/api/admin", require("./routes/adminRoutes"));
 app.use("/api/invoices", require("./routes/invoiceRoutes"));
 app.use("/api/analytics", analyticsRoutes);
+app.use("/api/notifications", require("./routes/notificationRoutes"));
 
 
 //location routes

@@ -1,5 +1,7 @@
 const Deal = require("../models/Deal");
-const Chat = require("../models/Chat"); // To link initial message if needed
+const Chat = require("../models/Chat");
+const User = require("../models/User");
+const { createNotification } = require("./notificationController");
 
 // Create a new Deal Negotiation
 exports.createDeal = async (req, res) => {
@@ -15,14 +17,27 @@ exports.createDeal = async (req, res) => {
         const deal = await Deal.create({
             crop,
             seller: sellerId,
-            buyer: buyerId, // Assuming Seller starts it, or vice versa depending on UI flow
+            buyer: buyerId,
             originalPrice,
             quantityKg,
             currentOffer: originalPrice,
             status: "PENDING",
             lastOfferBy: sellerId,
-            expiresAt: new Date(Date.now() + 4 * 60 * 60 * 1000) // 4 Hours Expiry
+            expiresAt: new Date(Date.now() + 4 * 60 * 60 * 1000)
         });
+
+        // Notify Buyer
+        const io = req.app.get("io");
+        if (io) {
+            await createNotification(io, {
+                userId: buyerId,
+                role: "buyer",
+                title: "New Purchase Request",
+                message: `Farmer ${req.user.name} sent a deal for ${crop}`,
+                type: "deal",
+                relatedEntityId: deal._id
+            });
+        }
 
         res.status(201).json({ success: true, deal });
 
@@ -59,6 +74,22 @@ exports.makeOffer = async (req, res) => {
 
         await deal.save();
 
+        // Notify Other Party
+        const io = req.app.get("io");
+        if (io) {
+            const recipientId = deal.seller.toString() === req.user._id.toString() ? deal.buyer : deal.seller;
+            const recipientRole = deal.seller.toString() === req.user._id.toString() ? "buyer" : "farmer";
+
+            await createNotification(io, {
+                userId: recipientId,
+                role: recipientRole,
+                title: "New Counter Offer",
+                message: `${req.user.name} offered ₹${price} for ${deal.crop}`,
+                type: "deal",
+                relatedEntityId: deal._id
+            });
+        }
+
         res.json({ success: true, message: "Offer sent", deal });
 
     } catch (err) {
@@ -93,6 +124,22 @@ exports.acceptOffer = async (req, res) => {
         deal.status = "ACCEPTED";
         await deal.save();
 
+        // Notify Offer Maker
+        const io = req.app.get("io");
+        if (io) {
+            const recipientId = deal.lastOfferBy;
+            const recipientRole = recipientId.toString() === deal.buyer.toString() ? "buyer" : "farmer";
+
+            await createNotification(io, {
+                userId: recipientId,
+                role: recipientRole,
+                title: "Deal Accepted!",
+                message: `${req.user.name} accepted your offer for ${deal.crop}`,
+                type: "deal",
+                relatedEntityId: deal._id
+            });
+        }
+
         res.json({ success: true, message: "Deal Accepted!", deal });
 
     } catch (err) {
@@ -112,6 +159,22 @@ exports.rejectOffer = async (req, res) => {
 
         deal.status = "REJECTED";
         await deal.save();
+
+        // Notify Offer Maker
+        const io = req.app.get("io");
+        if (io) {
+            const recipientId = deal.lastOfferBy;
+            const recipientRole = recipientId.toString() === deal.buyer.toString() ? "buyer" : "farmer";
+
+            await createNotification(io, {
+                userId: recipientId,
+                role: recipientRole,
+                title: "Deal Rejected",
+                message: `${req.user.name} rejected the offer for ${deal.crop}`,
+                type: "deal",
+                relatedEntityId: deal._id
+            });
+        }
 
         res.json({ success: true, message: "Deal Rejected", deal });
 
