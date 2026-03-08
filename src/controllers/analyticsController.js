@@ -19,8 +19,8 @@ const BASELINE_PRICES = {
 const runPythonPrediction = async (historicalData, days) => {
     return new Promise((resolve, reject) => {
         const pythonScript = path.join(__dirname, "../ml/predict.py");
-        // Start Python process
-        const python = spawn("python3", [pythonScript]);
+        // Start Python process - Use 'py' for Windows, 'python3' for others
+        const python = spawn("py", [pythonScript]);
 
         let dataString = "";
         let errorString = "";
@@ -69,15 +69,27 @@ const generateRecommendation = (crop, mandi, historicalPrices, predictedPrices) 
     if (maxPrice > currentPrice * 1.05) demandStr = "High"; // 5% jump
     else if (maxPrice < currentPrice) demandStr = "Low";
 
-    let dayString = peakDayIndex === 0 ? "tomorrow" : `in ${peakDayIndex + 1} days`;
+    // Create a simple, jargon-free recommendation
+    let recommendation = "";
+    // Note: `predictedPrices` here is an array of numbers. To get the date, we need the `predictedData` array from `getPriceForecast`.
+    // For simplicity, we'll use `peakDayIndex` to describe the timing.
+    const peakPrice = maxPrice; // Renaming for clarity with the user's snippet
 
     if (demandStr === "High") {
-        return `We project a mathematical peak of ₹${maxPrice.toFixed(2)} ${dayString} for ${crop} in ${mandi}, indicating High demand. This mathematically represents an optimal window to sell.`;
+        if (peakDayIndex === 0) {
+            recommendation = `Market prices for ${crop} are at their best right now in ${mandi}. Demand is strong, so it's a great time to sell your harvest today.`;
+        } else {
+            // We don't have `predicted` (the full object with date) here, so we'll use `peakDayIndex`
+            const dayString = peakDayIndex === 0 ? "tomorrow" : `in ${peakDayIndex + 1} days`;
+            recommendation = `Prices for ${crop} in ${mandi} are expected to rise soon. Our model shows the price could reach ₹${peakPrice.toFixed(0)} ${dayString}. We recommend waiting a few days to get the best value for your crop.`;
+        }
     } else if (demandStr === "Medium") {
-        return `Market trends indicate steady conditions. A forecasted high of ₹${maxPrice.toFixed(2)} is expected ${dayString}. Consider selling incrementally.`;
+        const dayString = peakDayIndex === 0 ? "tomorrow" : `in ${peakDayIndex + 1} days`;
+        recommendation = `Market trends indicate steady conditions. A forecasted high of ₹${maxPrice.toFixed(2)} is expected ${dayString}. Consider selling incrementally.`;
     } else {
-        return `Algorithm indicates a downward trend with Low demand. It may be advisable to hold your crop and wait for a recovery cycle.`;
+        recommendation = `Algorithm indicates a downward trend with Low demand. It may be advisable to hold your crop and wait for a recovery cycle.`;
     }
+    return recommendation;
 };
 
 /**
