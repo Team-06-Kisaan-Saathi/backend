@@ -1,6 +1,7 @@
 const User = require("../models/User");
-const CropListing = require("../models/Inventory"); // Assuming Inventory model for crops
-const Deal = require("../models/Deal"); // Assuming Deal model for orders
+const CropListing = require("../models/Inventory");
+const Deal = require("../models/Deal");
+const Auction = require("../models/Auction");
 
 exports.getStats = async (req, res) => {
     try {
@@ -8,9 +9,67 @@ exports.getStats = async (req, res) => {
         const totalBuyers = await User.countDocuments({ role: "buyer" });
         const activeListings = await CropListing.countDocuments({ status: "ACTIVE" });
 
-        // Revenue calculation (total amount of completed deals)
+        // Revenue calculation (total amount of completed deals + auctions)
         const completedDeals = await Deal.find({ status: "ACCEPTED" });
-        const monthlyRevenue = completedDeals.reduce((sum, deal) => sum + (deal.currentOffer * deal.quantityKg || 0), 0);
+        const dealRevenue = completedDeals.reduce((sum, deal) => sum + (deal.currentOffer * deal.quantityKg || 0), 0);
+
+        const completedAuctions = await Auction.find({ status: "CLOSED" });
+        const auctionRevenue = completedAuctions.reduce((sum, auc) => sum + (auc.winningBid?.amount || 0), 0);
+
+        const totalRevenue = dealRevenue + auctionRevenue;
+
+        // Weekly Revenue Overview (Last 7 Days)
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6);
+        sevenDaysAgo.setHours(0, 0, 0, 0);
+
+        const weekDeals = await Deal.find({
+            status: "ACCEPTED",
+            createdAt: { $gte: sevenDaysAgo }
+        });
+
+        const weekAuctions = await Auction.find({
+            status: "CLOSED",
+            updatedAt: { $gte: sevenDaysAgo }
+        });
+
+        // We want data for the last 7 labels (Mon-Sun or relative)
+        // But the frontend has fixed labels: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        // We will return data for the current week (Monday to Sunday)
+        const today = new Date();
+        const dayOfWeek = today.getDay(); // 0 (Sun) to 6 (Sat)
+        const monday = new Date(today);
+        monday.setDate(today.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+        monday.setHours(0, 0, 0, 0);
+
+        const currentWeekDeals = await Deal.find({
+            status: "ACCEPTED",
+            createdAt: { $gte: monday }
+        });
+        const currentWeekAuctions = await Auction.find({
+            status: "CLOSED",
+            updatedAt: { $gte: monday }
+        });
+
+        const weeklyRevenueData = [0, 0, 0, 0, 0, 0, 0]; // Mon, Tue, ... Sun
+
+        currentWeekDeals.forEach(d => {
+            const dt = new Date(d.createdAt);
+            const dIdx = dt.getDay(); // 0=Sun, 1=Mon...
+            const targetIdx = dIdx === 0 ? 6 : dIdx - 1;
+            weeklyRevenueData[targetIdx] += (d.currentOffer * d.quantityKg);
+        });
+
+        currentWeekAuctions.forEach(a => {
+            const dt = new Date(a.updatedAt);
+            const dIdx = dt.getDay();
+            const targetIdx = dIdx === 0 ? 6 : dIdx - 1;
+            weeklyRevenueData[targetIdx] += (a.winningBid?.amount || 0);
+        });
+
+        const weeklyRevenueK = weeklyRevenueData.map(val => val / 1000);
+        console.log("Weekly Revenue Data (Raw):", weeklyRevenueData);
+        console.log("Weekly Revenue Data (K):", weeklyRevenueK);
 
         // Orders today
         const startOfDay = new Date();
@@ -24,9 +83,10 @@ exports.getStats = async (req, res) => {
                 totalBuyers,
                 activeListings,
                 ordersToday,
-                monthlyRevenue,
-                reportedListings: 0, // Mock for now
-                pendingApprovals: 0, // Mock for now
+                monthlyRevenue: totalRevenue, // Renamed to monthlyRevenue to match frontend key but it's total
+                weeklyRevenue: weeklyRevenueK,
+                reportedListings: 0,
+                pendingApprovals: 0,
             }
         });
     } catch (err) {
@@ -97,37 +157,54 @@ exports.getAllOrders = async (req, res) => {
 
 exports.getAnalytics = async (req, res) => {
     try {
-        // 1. Revenue Growth (Last 6 Months)
-        const sixMonthsAgo = new Date();
-        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 5);
-        sixMonthsAgo.setDate(1);
-        sixMonthsAgo.setHours(0, 0, 0, 0);
+        const { timeframe } = req.query;
+        const monthsToFetch = timeframe === "1y" ? 12 : 6;
+
+        // 1. Revenue Growth
+        const startDate = new Date();
+        startDate.setMonth(startDate.getMonth() - (monthsToFetch - 1));
+        startDate.setDate(1);
+        startDate.setHours(0, 0, 0, 0);
 
         const deals = await Deal.find({
             status: "ACCEPTED",
-            createdAt: { $gte: sixMonthsAgo }
+            createdAt: { $gte: startDate }
+        });
+
+        const auctions = await Auction.find({
+            status: "CLOSED",
+            updatedAt: { $gte: startDate }
         });
 
         const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-        const last6MonthsLabels = [];
+        const periodLabels = [];
         const revenueByMonth = {};
 
-        for (let i = 5; i >= 0; i--) {
+        for (let i = monthsToFetch - 1; i >= 0; i--) {
             const d = new Date();
             d.setMonth(new Date().getMonth() - i);
             const label = months[d.getMonth()];
-            last6MonthsLabels.push(label);
+            periodLabels.push(label);
             revenueByMonth[label] = 0;
         }
 
         deals.forEach(deal => {
-            const monthLabel = months[new Date(deal.createdAt).getMonth()];
+            const dealDate = new Date(deal.createdAt);
+            const monthLabel = months[dealDate.getMonth()];
             if (revenueByMonth.hasOwnProperty(monthLabel)) {
                 revenueByMonth[monthLabel] += (deal.currentOffer * deal.quantityKg);
             }
         });
 
-        const revenueData = last6MonthsLabels.map(label => revenueByMonth[label] / 1000); // In thousands for display
+        auctions.forEach(auc => {
+            const aucDate = new Date(auc.updatedAt);
+            const monthLabel = months[aucDate.getMonth()];
+            if (revenueByMonth.hasOwnProperty(monthLabel)) {
+                revenueByMonth[monthLabel] += (auc.winningBid?.amount || 0);
+            }
+        });
+
+        const revenueData = periodLabels.map(label => revenueByMonth[label] / 1000);
 
         // 2. Category Distribution
         const categories = await CropListing.aggregate([
@@ -169,8 +246,8 @@ exports.getAnalytics = async (req, res) => {
             success: true,
             analytics: {
                 revenueGrowth: {
-                    labels: last6MonthsLabels,
-                    data: revenueData.length > 0 ? revenueData : [0, 0, 0, 0, 0, 0]
+                    labels: periodLabels,
+                    data: revenueData.length > 0 ? revenueData : Array(monthsToFetch).fill(0)
                 },
                 categoryDistribution: categoryData,
                 topProducts: topProducts.map(p => ({
@@ -181,6 +258,48 @@ exports.getAnalytics = async (req, res) => {
             }
         });
 
+    } catch (err) {
+        res.status(500).json({ success: false, message: err.message });
+    }
+};
+
+exports.getMonthlyDetail = async (req, res) => {
+    try {
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+
+        const deals = await Deal.find({
+            status: "ACCEPTED",
+            createdAt: { $gte: startOfMonth, $lte: endOfMonth }
+        });
+
+        const auctions = await Auction.find({
+            status: "CLOSED",
+            updatedAt: { $gte: startOfMonth, $lte: endOfMonth }
+        });
+
+        const daysInMonth = endOfMonth.getDate();
+        const labels = Array.from({ length: daysInMonth }, (_, i) => (i + 1).toString());
+        const revenueData = Array(daysInMonth).fill(0);
+
+        deals.forEach(d => {
+            const day = new Date(d.createdAt).getDate();
+            revenueData[day - 1] += (d.currentOffer * d.quantityKg);
+        });
+
+        auctions.forEach(a => {
+            const day = new Date(a.updatedAt).getDate();
+            revenueData[day - 1] += (a.winningBid?.amount || 0);
+        });
+
+        res.status(200).json({
+            success: true,
+            data: {
+                labels,
+                revenue: revenueData.map(v => v / 1000) // In 'k'
+            }
+        });
     } catch (err) {
         res.status(500).json({ success: false, message: err.message });
     }
