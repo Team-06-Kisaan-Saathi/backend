@@ -104,7 +104,10 @@ const seedDB = async () => {
         const mandis = [
             { name: "Azadpur", coords: [77.1729, 28.7373] },
             { name: "Ghazipur", coords: [77.3000, 28.6250] },
-            { name: "Pune APMC", coords: [73.8567, 18.5204] }
+            { name: "Pune APMC", coords: [73.8567, 18.5204] },
+            { name: "Ettimadai", coords: [76.8972, 10.9000] },
+            { name: "Coimbatore API", coords: [76.9558, 11.0168] },
+            { name: "Pollachi", coords: [77.0028, 10.6558] }
         ];
 
         const mandiPrices = [];
