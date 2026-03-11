@@ -6,34 +6,51 @@ const { createNotification } = require("./notificationController");
 // Create a new Deal Negotiation
 exports.createDeal = async (req, res) => {
     try {
-        const { crop, buyerId, originalPrice, quantityKg } = req.body;
-        const sellerId = req.user._id;
+        const { crop, buyerId, sellerId, originalPrice, quantityKg, chatId } = req.body;
+        const currentUserId = req.user._id;
+        const currentUserRole = req.user.role;
+
+        let finalSeller, finalBuyer;
+        if (currentUserRole === 'farmer') {
+            finalSeller = currentUserId;
+            finalBuyer = buyerId;
+        } else {
+            finalSeller = sellerId;
+            finalBuyer = currentUserId;
+        }
 
         // Basic validation
-        if (!crop || !buyerId || !originalPrice || !quantityKg) {
+        if (!crop || !finalSeller || !finalBuyer || !originalPrice || !quantityKg) {
             return res.status(400).json({ message: "All fields are required" });
         }
 
         const deal = await Deal.create({
             crop,
-            seller: sellerId,
-            buyer: buyerId,
+            seller: finalSeller,
+            buyer: finalBuyer,
             originalPrice,
             quantityKg,
             currentOffer: originalPrice,
             status: "PENDING",
-            lastOfferBy: sellerId,
+            lastOfferBy: currentUserId,
             expiresAt: new Date(Date.now() + 4 * 60 * 60 * 1000)
         });
 
-        // Notify Buyer
+        if (chatId) {
+            await Chat.findByIdAndUpdate(chatId, { dealId: deal._id });
+        }
+
+        // Notify Other Party
         const io = req.app.get("io");
         if (io) {
+            const recipientId = finalSeller.toString() === currentUserId.toString() ? finalBuyer : finalSeller;
+            const recipientRole = finalSeller.toString() === currentUserId.toString() ? "buyer" : "farmer";
+
             await createNotification(io, {
-                userId: buyerId,
-                role: "buyer",
+                userId: recipientId,
+                role: recipientRole,
                 title: "New Purchase Request",
-                message: `Farmer ${req.user.name} sent a deal for ${crop}`,
+                message: `${req.user.name} sent a deal for ${crop}`,
                 type: "deal",
                 relatedEntityId: deal._id
             });
