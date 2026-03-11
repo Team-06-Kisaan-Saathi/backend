@@ -77,12 +77,25 @@ exports.getNearbyMandis = async (req, res) => {
   try {
     const { lat, lng, distKm = 50, limit = 5 } = req.query;
 
-    if (!lat || !lng) {
-      return res.status(400).json({
-        success: false,
-        message: "Latitude and Longitude required",
-        requestId
-      });
+    // 1. Check if empty and seed
+    const count = await MandiPrice.countDocuments();
+    if (count === 0) {
+      // (Simplified seed for speed - full seed is in getMandiPrices)
+      const defaults = [{
+        crop: "Tomato", mandi: "Azadpur", locationName: "Azadpur Mandi, Delhi",
+        location: { type: "Point", coordinates: [77.17, 28.7] }, pricePerQuintal: 1500, date: new Date()
+      }];
+      await MandiPrice.insertMany(defaults);
+    }
+
+    if (!lat || !lng || (parseFloat(lat) === 0 && parseFloat(lng) === 0)) {
+      // If no location set, return top 5 mandis sorted by name as fallback
+      const fallback = await MandiPrice.aggregate([
+        { $group: { _id: "$mandi", mandiId: { $first: "$mandi" }, mandiName: { $first: "$locationName" }, coords: { $first: "$location.coordinates" } } },
+        { $limit: Number(limit) || 5 },
+        { $project: { _id: 0, mandiId: 1, mandiName: 1, coordinates: "$coords", distanceKm: { $literal: 0 } } }
+      ]);
+      return res.json({ success: true, count: fallback.length, data: fallback, message: "No user location provided, showing featured mandis.", requestId });
     }
 
     const lim = Math.min(Math.max(Number(limit) || 5, 1), 20);
@@ -139,6 +152,38 @@ exports.getMandiPrices = async (req, res) => {
 
   try {
     const { crop, location, sort, mandis, limit = 100, bypassCache } = req.query;
+
+    // 1. Auto-seed if empty
+    const count = await MandiPrice.countDocuments();
+    if (count === 0) {
+      console.log("Empty mandi price database. Seeding defaults...");
+      const crops = ["Tomato", "Onion", "Potato", "Wheat", "Rice", "Maize"];
+      const locations = [
+        { name: "Azadpur Mandi, Delhi", coords: [77.170, 28.707] },
+        { name: "Vashi APMC, Mumbai", coords: [73.00, 19.05] },
+        { name: "Pune APMC, Maharashtra", coords: [73.856, 18.520] },
+        { name: "Nashik Mandi, Maharashtra", coords: [73.789, 19.997] },
+        { name: "Ahmedabad Market, Gujarat", coords: [72.571, 23.022] },
+        { name: "Bangalore APMC, Karnataka", coords: [77.594, 12.971] }
+      ];
+
+      const basePrices = { Tomato: 1500, Onion: 2000, Potato: 1200, Wheat: 2400, Rice: 3500, Maize: 1800 };
+      const seedData = [];
+      locations.forEach(m => {
+        crops.forEach(c => {
+          seedData.push({
+            crop: c,
+            mandi: m.name.split(",")[0],
+            location: { type: "Point", coordinates: m.coords },
+            locationName: m.name,
+            pricePerQuintal: Math.round(basePrices[c] * (0.9 + Math.random() * 0.2)),
+            date: new Date()
+          });
+        });
+      });
+      await MandiPrice.insertMany(seedData);
+      console.log(`Seeded ${seedData.length} mandi price records.`);
+    }
 
     // Check Cache first if it's a generic request
     const isGenericRequest = !crop && !location && !mandis && limit == 100;
@@ -197,11 +242,6 @@ exports.getMandiPrices = async (req, res) => {
     if (isGenericRequest) {
       priceCache.data = resultRows;
       priceCache.lastUpdated = Date.now();
-    }
-
-    const duration = Date.now() - startTime;
-    if (duration > 500) {
-      console.warn(`[${new Date().toISOString()}] [${requestId}] Slow API Response: ${duration}ms`);
     }
 
     res.json({
