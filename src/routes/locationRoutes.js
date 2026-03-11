@@ -5,9 +5,26 @@ const Location = require("../models/Location");
 // GET active locations for dropdown
 router.get("/", async (req, res) => {
   try {
-    const locations = await Location.find({ isActive: true })
+    let locations = await Location.find({ isActive: true })
       .select("name locationCoordinates")
       .sort({ name: 1 });
+
+    // Seed if empty
+    if (locations.length === 0) {
+      console.log("Empty location database. Seeding defaults...");
+      const defaults = [
+        { name: "Azadpur Mandi, Delhi", locationCoordinates: { type: "Point", coordinates: [77.170, 28.707] } },
+        { name: "Vashi APMC, Mumbai", locationCoordinates: { type: "Point", coordinates: [73.00, 19.05] } },
+        { name: "Pune APMC, Maharashtra", locationCoordinates: { type: "Point", coordinates: [73.856, 18.520] } },
+        { name: "Ahmedabad Market, Gujarat", locationCoordinates: { type: "Point", coordinates: [72.571, 23.022] } },
+        { name: "Bangalore APMC, Karnataka", locationCoordinates: { type: "Point", coordinates: [77.594, 12.971] } },
+        { name: "Nashik Mandi, Maharashtra", locationCoordinates: { type: "Point", coordinates: [73.789, 19.997] } },
+      ];
+      await Location.insertMany(defaults);
+      locations = await Location.find({ isActive: true })
+        .select("name locationCoordinates")
+        .sort({ name: 1 });
+    }
 
     //Transform for frontend
     const data = locations.map((loc) => ({
